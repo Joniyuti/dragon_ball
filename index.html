@@ -1,0 +1,3185 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>DRAGON BALL: Sparking! ZERO リメイク</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Noto+Sans+JP:wght@500;700;900&display=swap" rel="stylesheet">
+  <style>
+    /* 画面外余白は完全な黒塗り(#000000)、スクロール防止 */
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background-color: #000000;
+      font-family: 'Noto Sans JP', 'Inter', sans-serif;
+      color: #ffffff;
+      touch-action: none;
+    }
+    /* 9:16 縦長ポートレートコンテナを画面中央に配置し、余白は#000000 */
+    #outer-stage {
+      width: 100vw;
+      height: 100vh;
+      background-color: #000000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    #game-frame {
+      position: relative;
+      /* 9:16 比率を維持しつつ画面内に収める */
+      width: min(100vw, calc(100vh * 9 / 16));
+      height: min(100vh, calc(100vw * 16 / 9));
+      background-color: #090d1a;
+      overflow: hidden;
+      box-shadow: 0 0 60px rgba(0, 0, 0, 0.95);
+    }
+    canvas#game-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    /* サイバー/格闘アクション調の斜めカットやグロー */
+    .skew-badge {
+      transform: skewX(-12deg);
+    }
+    .unskew {
+      transform: skewX(12deg);
+    }
+    .text-stroke-dark {
+      text-shadow:
+        -2px -2px 0 #05070e,
+         2px -2px 0 #05070e,
+        -2px  2px 0 #05070e,
+         2px  2px 0 #05070e,
+         0px  4px 10px rgba(0, 0, 0, 0.85);
+    }
+    .text-stroke-gold {
+      text-shadow:
+        -2px -2px 0 #4a2500,
+         2px -2px 0 #4a2500,
+        -2px  2px 0 #4a2500,
+         2px  2px 0 #4a2500,
+         0px  0px 18px rgba(255, 215, 0, 0.9);
+    }
+    @keyframes cutinSlide {
+      0% { transform: translateX(-110%) skewX(-14deg); opacity: 0; }
+      18% { transform: translateX(0%) skewX(-14deg); opacity: 1; }
+      82% { transform: translateX(0%) skewX(-14deg); opacity: 1; }
+      100% { transform: translateX(110%) skewX(-14deg); opacity: 0; }
+    }
+    .animate-cutin {
+      animation: cutinSlide 1.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 10px rgba(250, 204, 21, 0.5), inset 0 0 8px rgba(255, 255, 255, 0.25); }
+      50% { box-shadow: 0 0 22px rgba(250, 204, 21, 0.95), inset 0 0 14px rgba(255, 255, 255, 0.5); }
+    }
+    .sparking-active-ui {
+      animation: pulseGlow 0.75s infinite;
+    }
+    /* タッチコントロールボタンの押し込み感 */
+    .ctrl-btn {
+      transition: transform 0.06s ease, background-color 0.08s ease;
+      touch-action: none;
+    }
+    .ctrl-btn:active, .ctrl-btn.pressed {
+      transform: scale(0.9);
+      filter: brightness(1.35);
+    }
+  </style>
+</head>
+<body>
+  <div id="outer-stage">
+    <div id="game-frame">
+      <!-- 2Dバトル描画キャンバス -->
+      <canvas id="game-canvas"></canvas>
+
+      <!-- 上部システムバー（音量・キャラ選択・キーガイド） -->
+      <div id="top-bar" class="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-2 py-1.5 bg-gradient-to-b from-black/85 via-black/45 to-transparent pointer-events-auto">
+        <div class="flex items-center gap-1.5">
+          <span class="px-2 py-0.5 text-[10px] font-black tracking-wider uppercase rounded bg-gradient-to-r from-amber-500 to-orange-600 text-black shadow">
+            SPARKING! ZERO 2D
+          </span>
+          <span id="stage-badge" class="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-bold rounded bg-white/10 text-sky-200 border border-white/15">
+            荒野の決戦場
+          </span>
+        </div>
+        <div class="flex items-center gap-1">
+          <button id="btn-keyguide" type="button" class="px-2 py-1 text-[10px] font-bold rounded bg-slate-800/90 hover:bg-slate-700 text-amber-300 border border-amber-400/30 cursor-pointer">
+            操作/キー
+          </button>
+          <button id="btn-select-mode" type="button" class="px-2 py-1 text-[10px] font-bold rounded bg-slate-800/90 hover:bg-slate-700 text-cyan-200 border border-cyan-400/30 cursor-pointer">
+            キャラ選択
+          </button>
+          <button id="btn-mute" type="button" class="px-2 py-1 text-[10px] font-bold rounded bg-slate-800/90 hover:bg-slate-700 text-white border border-white/20 cursor-pointer">
+            🔊 SOUND
+          </button>
+        </div>
+      </div>
+
+      <!-- PCキー操作ガイドオーバーレイ（切替可能） -->
+      <div id="keyguide-panel" class="hidden absolute top-9 left-2 right-2 z-40 rounded-xl bg-slate-950/95 border border-amber-400/50 p-2.5 text-[11px] leading-relaxed shadow-2xl">
+        <div class="flex items-center justify-between mb-1.5 border-b border-white/10 pb-1">
+          <span class="font-black text-amber-300">PCキーボード / タッチ操作ガイド</span>
+          <button id="btn-close-guide" type="button" class="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-bold cursor-pointer">閉じる</button>
+        </div>
+        <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-slate-200">
+          <div><span class="text-amber-300 font-bold">WASD / 矢印</span>：移動・浮遊・2回でDダッシュ</div>
+          <div><span class="text-sky-300 font-bold">Z / J</span>：ラッシュ（連撃・打ち上げ・追撃）</div>
+          <div><span class="text-cyan-300 font-bold">X / K</span>：気弾（弾き・気弾競り合い）</div>
+          <div><span class="text-emerald-300 font-bold">C / L</span>：ガード / タイミングカウンター</div>
+          <div><span class="text-yellow-300 font-bold">Shift</span>：気溜め（SPARKING突入）</div>
+          <div><span class="text-orange-300 font-bold">F</span>：リベンジカウンター（正面攻撃割込）</div>
+          <div><span class="text-purple-300 font-bold">Q / E</span>：ブラスト1（強化/スキル）/ ブラスト2</div>
+          <div><span class="text-rose-400 font-bold">R</span>：アルティメットブラスト（SPARKING中）</div>
+          <div class="col-span-2"><span class="text-amber-400 font-bold">T または 1〜7キー</span>：リアルタイム変身・形態切替（悟空/ベジータ/フリーザ/ブロリー/ジレン）</div>
+        </div>
+      </div>
+
+      <!-- バトルHUD（上部：P1 & CPU ステータス） -->
+      <div id="battle-hud" class="hidden absolute top-8 left-2 right-2 z-20 pointer-events-none">
+        <div class="flex items-start justify-between gap-1.5">
+          <!-- P1 ステータス -->
+          <div class="flex-1 max-w-[48%]">
+            <div class="flex items-baseline justify-between mb-0.5">
+              <span id="p1-name-label" class="text-[11px] sm:text-xs font-black tracking-wide text-amber-300 text-stroke-dark truncate">孫悟空</span>
+              <span id="p1-form-badge" class="ml-1 px-1.5 py-0.2 text-[9px] font-black rounded bg-amber-500/25 border border-amber-400/60 text-amber-200 truncate">ノーマル</span>
+            </div>
+            <!-- 体力バー -->
+            <div class="h-3 w-full rounded bg-slate-900/90 border border-white/30 overflow-hidden p-[1px]">
+              <div id="p1-hp-bar" class="h-full w-full rounded-sm bg-gradient-to-r from-emerald-400 via-lime-400 to-amber-300 transition-all duration-75"></div>
+            </div>
+            <!-- 気力・SPARKING・スキルストック -->
+            <div class="mt-1 flex items-center gap-1">
+              <div class="flex-1 h-2 rounded bg-slate-950/90 border border-cyan-400/40 overflow-hidden">
+                <div id="p1-ki-bar" class="h-full w-1/2 bg-gradient-to-r from-sky-400 via-cyan-300 to-white"></div>
+              </div>
+              <div class="w-12 h-2 rounded bg-slate-950/90 border border-amber-400/50 overflow-hidden">
+                <div id="p1-sp-bar" class="h-full w-0 bg-gradient-to-r from-amber-500 via-yellow-300 to-rose-500"></div>
+              </div>
+            </div>
+            <div class="mt-0.5 flex items-center justify-between text-[9px] font-bold">
+              <div id="p1-stocks" class="flex items-center gap-0.5 text-amber-300">◆ ◆ ◆ ◆ ◆</div>
+              <span id="p1-sp-text" class="text-amber-300 font-black">SP</span>
+            </div>
+          </div>
+
+          <!-- タイマー＆ラウンド表示 -->
+          <div class="flex flex-col items-center justify-center px-1.5 py-0.5 rounded bg-black/75 border border-white/20">
+            <span class="text-[8px] font-bold text-amber-300 tracking-widest">TIME</span>
+            <span id="timer-display" class="text-sm font-black text-white leading-none">99</span>
+          </div>
+
+          <!-- CPU ステータス -->
+          <div class="flex-1 max-w-[48%]">
+            <div class="flex items-baseline justify-between mb-0.5">
+              <span id="p2-form-badge" class="mr-1 px-1.5 py-0.2 text-[9px] font-black rounded bg-rose-500/25 border border-rose-400/60 text-rose-200 truncate">形態</span>
+              <span id="p2-name-label" class="text-[11px] sm:text-xs font-black tracking-wide text-rose-300 text-stroke-dark truncate text-right">フリーザ</span>
+            </div>
+            <div class="h-3 w-full rounded bg-slate-900/90 border border-white/30 overflow-hidden p-[1px]">
+              <div id="p2-hp-bar" class="h-full w-full rounded-sm bg-gradient-to-l from-rose-500 via-orange-400 to-amber-300 ml-auto transition-all duration-75"></div>
+            </div>
+            <div class="mt-1 flex items-center gap-1">
+              <div class="w-12 h-2 rounded bg-slate-950/90 border border-amber-400/50 overflow-hidden">
+                <div id="p2-sp-bar" class="h-full w-0 bg-gradient-to-r from-rose-500 via-orange-400 to-yellow-300 ml-auto"></div>
+              </div>
+              <div class="flex-1 h-2 rounded bg-slate-950/90 border border-purple-400/40 overflow-hidden">
+                <div id="p2-ki-bar" class="h-full w-1/2 bg-gradient-to-l from-fuchsia-400 via-purple-300 to-white ml-auto"></div>
+              </div>
+            </div>
+            <div class="mt-0.5 flex items-center justify-between text-[9px] font-bold">
+              <span id="p2-sp-text" class="text-rose-300 font-black">CPU</span>
+              <div id="p2-stocks" class="flex items-center gap-0.5 text-rose-300">◆ ◆ ◆ ◆ ◆</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- バトル中セリフバナー -->
+        <div id="dialogue-box" class="mt-2 mx-auto max-w-[92%] rounded-lg bg-gradient-to-r from-slate-950/90 via-slate-900/95 to-slate-950/90 border-l-4 border-amber-400 px-2.5 py-1 shadow-lg hidden">
+          <div class="flex items-center gap-1.5">
+            <span id="dialogue-speaker" class="text-[10px] font-black text-amber-300 shrink-0">孫悟空:</span>
+            <span id="dialogue-text" class="text-[11px] font-bold text-white leading-snug">「オラ、ワクワクすっぞ！」</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 変身・アルティメット カットイン演出レイヤー -->
+      <div id="cutin-layer" class="hidden absolute inset-x-0 top-[24%] z-30 pointer-events-none overflow-hidden">
+        <div id="cutin-banner" class="animate-cutin mx-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-600 via-yellow-400 to-rose-600 border-2 border-white shadow-2xl">
+          <div id="cutin-sub" class="text-[10px] font-black tracking-widest uppercase text-slate-950">限界突破・形態変化</div>
+          <div id="cutin-title" class="text-lg sm:text-xl font-black text-white text-stroke-dark tracking-wider">超サイヤ人ブルー！！</div>
+          <div id="cutin-quote" class="text-xs font-bold text-amber-100 text-stroke-dark mt-0.5">「これが神の領域を超えた力だ！」</div>
+        </div>
+      </div>
+
+      <!-- キャラクター選択画面 -->
+      <div id="select-screen" class="absolute inset-0 z-20 flex flex-col justify-between pt-10 pb-2.5 px-2.5 bg-gradient-to-b from-slate-950/95 via-[#0c1326]/95 to-slate-950/98 overflow-y-auto">
+        <div>
+          <div class="text-center mb-2">
+            <div class="text-[10px] font-black tracking-[0.25em] text-amber-400 uppercase">2D ULTRA ARENA ACTION</div>
+            <h1 class="text-xl sm:text-2xl font-black tracking-wider bg-gradient-to-r from-amber-200 via-yellow-400 to-orange-500 bg-clip-text text-transparent">
+              DRAGON BALL: Sparking! ZERO
+            </h1>
+            <div class="text-[11px] font-bold text-cyan-300">〜 2D REMAKE EDITION 〜</div>
+          </div>
+
+          <!-- P1 vs CPU プレビューカード -->
+          <div class="grid grid-cols-2 gap-2 mb-2.5">
+            <!-- P1選択枠 -->
+            <div class="rounded-xl bg-slate-900/90 border border-amber-400/50 p-2">
+              <div class="flex items-center justify-between text-[10px] font-black text-amber-300 mb-1">
+                <span>PLAYER 1</span>
+                <span id="sel-p1-role" class="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-200">変身対応</span>
+              </div>
+              <div id="sel-p1-name" class="text-sm font-black text-white truncate">孫悟空</div>
+              <div id="sel-p1-desc" class="text-[10px] text-slate-300 line-clamp-2 mt-0.5 min-h-[28px]">
+                ノーマル〜超サイヤ人1〜3・ゴッド・ブルー・超4までリアルタイム変身！
+              </div>
+            </div>
+            <!-- CPU選択枠 -->
+            <div class="rounded-xl bg-slate-900/90 border border-rose-400/50 p-2">
+              <div class="flex items-center justify-between text-[10px] font-black text-rose-300 mb-1">
+                <span>CPU OPPONENT</span>
+                <span class="px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-200">AI対戦</span>
+              </div>
+              <div id="sel-p2-name" class="text-sm font-black text-white truncate">フリーザ</div>
+              <div id="sel-p2-desc" class="text-[10px] text-slate-300 line-clamp-2 mt-0.5 min-h-[28px]">
+                宇宙の帝王。形態変化とデスビーム・スーパーノヴァを操る強敵。
+              </div>
+            </div>
+          </div>
+
+          <!-- ファイター一覧（P1用） -->
+          <div class="mb-2">
+            <div class="text-[10px] font-black text-amber-300 mb-1 flex items-center justify-between">
+              <span>◆ プレイヤーキャラを選択</span>
+              <span class="text-slate-400 font-normal">5名参戦・形態変化多数</span>
+            </div>
+            <div id="p1-roster" class="grid grid-cols-5 gap-1.5"></div>
+          </div>
+
+          <!-- 対戦相手一覧（CPU用） -->
+          <div class="mb-2">
+            <div class="text-[10px] font-black text-rose-300 mb-1 flex items-center justify-between">
+              <span>◆ 対戦相手（CPU）を選択</span>
+              <span class="text-slate-400 font-normal">悟空・ベジータ・パン・ビーデルも可</span>
+            </div>
+            <div id="p2-roster" class="grid grid-cols-5 gap-1.5"></div>
+          </div>
+
+          <!-- ステージ選択 -->
+          <div class="mb-2">
+            <div class="text-[10px] font-black text-cyan-300 mb-1">◆ バトルステージ</div>
+            <div id="stage-selector" class="grid grid-cols-3 gap-1.5"></div>
+          </div>
+        </div>
+
+        <!-- バトル開始ボタン -->
+        <button id="btn-start-battle" type="button" class="w-full py-3 rounded-xl font-black text-base tracking-wider text-slate-950 bg-gradient-to-r from-amber-300 via-yellow-400 to-orange-500 hover:brightness-110 active:scale-[0.99] border-2 border-white shadow-xl cursor-pointer">
+          ⚡ バトルスタート！ ⚡
+        </button>
+      </div>
+
+      <!-- 勝敗リザルト画面 -->
+      <div id="result-screen" class="hidden absolute inset-0 z-30 flex flex-col items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+        <div class="w-full max-w-[92%] rounded-2xl bg-gradient-to-b from-slate-900 to-slate-950 border-2 border-amber-400/70 p-4 text-center shadow-2xl">
+          <div id="result-badge" class="inline-block px-3 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase bg-amber-400 text-slate-950 mb-1">
+            BATTLE FINISH
+          </div>
+          <h2 id="result-title" class="text-2xl font-black text-amber-300 text-stroke-dark mb-1">YOU WIN!</h2>
+          <p id="result-quote" class="text-xs font-bold text-white italic mb-3">「オラ、まだまだ強くなれるぞ！」</p>
+          <div id="result-stats" class="grid grid-cols-2 gap-2 text-[11px] bg-black/50 rounded-xl p-2.5 border border-white/10 mb-4 text-left">
+            <div>最大コンボ: <span id="stat-max-combo" class="font-black text-amber-300">0</span> HIT</div>
+            <div>変身回数: <span id="stat-transforms" class="font-black text-cyan-300">0</span> 回</div>
+            <div>与ダメージ: <span id="stat-dmg-dealt" class="font-black text-emerald-300">0</span></div>
+            <div>残り体力: <span id="stat-rem-hp" class="font-black text-rose-300">0%</span></div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="btn-rematch" type="button" class="py-2.5 rounded-xl font-black text-xs text-slate-950 bg-gradient-to-r from-amber-300 to-orange-400 border border-white cursor-pointer">
+              もう一度戦う
+            </button>
+            <button id="btn-back-select" type="button" class="py-2.5 rounded-xl font-black text-xs text-white bg-slate-800 hover:bg-slate-700 border border-white/25 cursor-pointer">
+              キャラ選択へ
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- スマホ・タッチ操作パッド（バトル中下部に配置） -->
+      <div id="touch-controls" class="hidden absolute bottom-0 left-0 right-0 z-20 px-2 pb-2 pt-1 bg-gradient-to-t from-black/90 via-black/65 to-transparent pointer-events-none">
+        <!-- 上段：変身・ブラスト1・ブラスト2・アルティメット・リベンジカウンター -->
+        <div class="flex items-center justify-between gap-1 mb-1.5 pointer-events-auto">
+          <button data-act="transform" type="button" class="ctrl-btn flex-1 py-1.5 rounded-lg bg-gradient-to-b from-amber-400 to-amber-600 text-slate-950 font-black text-[10px] border border-yellow-200 shadow">
+            変身 [T]
+          </button>
+          <button data-act="blast1" type="button" class="ctrl-btn flex-1 py-1.5 rounded-lg bg-gradient-to-b from-purple-500 to-indigo-700 text-white font-black text-[10px] border border-purple-300/60 shadow">
+            スキル [Q]
+          </button>
+          <button data-act="blast2" type="button" class="ctrl-btn flex-1 py-1.5 rounded-lg bg-gradient-to-b from-sky-500 to-blue-700 text-white font-black text-[10px] border border-sky-300/60 shadow">
+            必殺 [E]
+          </button>
+          <button data-act="ultimate" type="button" class="ctrl-btn flex-1 py-1.5 rounded-lg bg-gradient-to-b from-rose-500 to-red-700 text-white font-black text-[10px] border border-rose-300/60 shadow">
+            究極 [R]
+          </button>
+          <button data-act="revenge" type="button" class="ctrl-btn flex-1 py-1.5 rounded-lg bg-gradient-to-b from-orange-500 to-red-600 text-white font-black text-[10px] border border-orange-200/70 shadow">
+            反撃 [F]
+          </button>
+        </div>
+
+        <!-- 下段：左側に方向パッド、右側にラッシュ・気弾・ガード・気溜め -->
+        <div class="flex items-end justify-between gap-2 pointer-events-auto">
+          <!-- 方向パッド（上下左右） -->
+          <div class="grid grid-cols-3 gap-1 w-28 h-28 shrink-0">
+            <div></div>
+            <button data-dir="up" type="button" class="ctrl-btn rounded-lg bg-slate-800/90 border border-white/25 text-white font-black text-xs flex items-center justify-center shadow">▲</button>
+            <div></div>
+            <button data-dir="left" type="button" class="ctrl-btn rounded-lg bg-slate-800/90 border border-white/25 text-white font-black text-xs flex items-center justify-center shadow">◀</button>
+            <div class="rounded-lg bg-slate-900/60 border border-white/10 flex items-center justify-center text-[9px] text-slate-400 font-bold">MOVE</div>
+            <button data-dir="right" type="button" class="ctrl-btn rounded-lg bg-slate-800/90 border border-white/25 text-white font-black text-xs flex items-center justify-center shadow">▶</button>
+            <div></div>
+            <button data-dir="down" type="button" class="ctrl-btn rounded-lg bg-slate-800/90 border border-white/25 text-white font-black text-xs flex items-center justify-center shadow">▼</button>
+            <div></div>
+          </div>
+
+          <!-- アクションボタン群 -->
+          <div class="grid grid-cols-2 gap-1.5 flex-1 max-w-[190px]">
+            <button data-act="rush" type="button" class="ctrl-btn py-3 rounded-xl bg-gradient-to-br from-amber-400 to-orange-600 text-slate-950 font-black text-xs border border-yellow-200 shadow-lg">
+              ラッシュ [Z]
+            </button>
+            <button data-act="ki" type="button" class="ctrl-btn py-3 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 text-white font-black text-xs border border-cyan-200 shadow-lg">
+              気弾 [X]
+            </button>
+            <button data-hold="guard" type="button" class="ctrl-btn py-2.5 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white font-black text-[11px] border border-emerald-200 shadow">
+              ガード [C]
+            </button>
+            <button data-hold="charge" type="button" class="ctrl-btn py-2.5 rounded-xl bg-gradient-to-br from-yellow-400 via-amber-500 to-orange-600 text-slate-950 font-black text-[11px] border border-white shadow">
+              気溜め [Shift]
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * ============================================================================
+     * DRAGON BALL: Sparking! ZERO リメイク (2D ACTION)
+     * 9:16 縦長ポートレート比率 / 2Dベクター描画 / Web Audio APIシンセサイザー
+     * Sparking! ZEROシステム（気力・スキルストック・SPARKING・変身・反撃・究極技）再現
+     * ============================================================================
+     */
+
+    // --------------------------------------------------------------------------
+    // 1. Web Audio API シンセサイザー（外部音声ファイル不要・効果音＆BGM）
+    // --------------------------------------------------------------------------
+    class SoundEngine {
+      constructor() {
+        this.ctx = null;
+        this.muted = false;
+        this.bgmTimer = null;
+        this.bgmStep = 0;
+        this.chargeOsc = null;
+        this.chargeGain = null;
+        this.isChargingSound = false;
+      }
+
+      unlock() {
+        try {
+          if (!this.ctx) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AudioCtx();
+          }
+          if (this.ctx.state === 'suspended') {
+            this.ctx.resume();
+          }
+        } catch (e) {
+          // 音声非対応環境でも安全に継続
+        }
+      }
+
+      setMuted(mute) {
+        this.muted = mute;
+        if (mute) {
+          this.stopChargeHum();
+          this.stopBgm();
+        } else if (gameState.phase === 'battle') {
+          this.startBgm();
+        }
+      }
+
+      createNoiseBuffer(duration = 0.5) {
+        if (!this.ctx) return null;
+        const sampleRate = this.ctx.sampleRate;
+        const length = Math.max(1, Math.floor(sampleRate * duration));
+        const buffer = this.ctx.createBuffer(1, length, sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < length; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+        return buffer;
+      }
+
+      playHit(heavy = false) {
+        if (this.muted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = heavy ? 'sawtooth' : 'triangle';
+          osc.frequency.setValueAtTime(heavy ? 190 : 280, now);
+          osc.frequency.exponentialRampToValueAtTime(heavy ? 38 : 65, now + (heavy ? 0.18 : 0.09));
+
+          gain.gain.setValueAtTime(heavy ? 0.35 : 0.22, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + (heavy ? 0.19 : 0.1));
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + (heavy ? 0.2 : 0.11));
+
+          // インパクトノイズ
+          const noiseBuf = this.createNoiseBuffer(heavy ? 0.16 : 0.07);
+          if (noiseBuf) {
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = noiseBuf;
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.setValueAtTime(heavy ? 900 : 1600, now);
+            const nGain = this.ctx.createGain();
+            nGain.gain.setValueAtTime(heavy ? 0.28 : 0.14, now);
+            nGain.gain.exponentialRampToValueAtTime(0.001, now + (heavy ? 0.16 : 0.07));
+            noise.connect(filter);
+            filter.connect(nGain);
+            nGain.connect(this.ctx.destination);
+            noise.start(now);
+          }
+        } catch (e) {}
+      }
+
+      playKiBlast() {
+        if (this.muted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(980, now);
+          osc.frequency.exponentialRampToValueAtTime(160, now + 0.12);
+          gain.gain.setValueAtTime(0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.14);
+        } catch (e) {}
+      }
+
+      playDash() {
+        if (this.muted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          const buf = this.createNoiseBuffer(0.14);
+          if (!buf) return;
+          const src = this.ctx.createBufferSource();
+          src.buffer = buf;
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'bandpass';
+          filter.frequency.setValueAtTime(450, now);
+          filter.frequency.exponentialRampToValueAtTime(1800, now + 0.14);
+          const gain = this.ctx.createGain();
+          gain.gain.setValueAtTime(0.16, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+          src.connect(filter);
+          filter.connect(gain);
+          gain.connect(this.ctx.destination);
+          src.start(now);
+        } catch (e) {}
+      }
+
+      playGuard() {
+        if (this.muted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(520, now);
+          osc.frequency.exponentialRampToValueAtTime(220, now + 0.08);
+          gain.gain.setValueAtTime(0.14, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.085);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.09);
+        } catch (e) {}
+      }
+
+      playCounter() {
+        if (this.muted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          [660, 990, 1320].forEach((freq, idx) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq, now + idx * 0.025);
+            gain.gain.setValueAtTime(0.18, now + idx * 0.025);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.025 + 0.22);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now + idx * 0.025);
+            osc.stop(now + idx * 0.025 + 0.24);
+          });
+          this.playHit(true);
+        } catch (e) {}
+      }
+
+      playBeam(duration = 0.75, isUltimate = false) {
+        if (this.muted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          const osc1 = this.ctx.createOscillator();
+          const osc2 = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc1.type = 'sawtooth';
+          osc2.type = 'square';
+          osc1.frequency.setValueAtTime(isUltimate ? 130 : 170, now);
+          osc1.frequency.linearRampToValueAtTime(isUltimate ? 75 : 110, now + duration);
+          osc2.frequency.setValueAtTime(isUltimate ? 195 : 255, now);
+          osc2.frequency.linearRampToValueAtTime(isUltimate ? 115 : 165, now + duration);
+
+          gain.gain.setValueAtTime(0.01, now);
+          gain.gain.linearRampToValueAtTime(isUltimate ? 0.32 : 0.22, now + 0.06);
+          gain.gain.setValueAtTime(isUltimate ? 0.28 : 0.18, now + duration * 0.75);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+          osc1.connect(gain);
+          osc2.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc1.start(now);
+          osc2.start(now);
+          osc1.stop(now + duration + 0.02);
+          osc2.stop(now + duration + 0.02);
+
+          const noiseBuf = this.createNoiseBuffer(duration);
+          if (noiseBuf) {
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = noiseBuf;
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(isUltimate ? 2400 : 1600, now);
+            const nGain = this.ctx.createGain();
+            nGain.gain.setValueAtTime(isUltimate ? 0.25 : 0.15, now);
+            nGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+            noise.connect(filter);
+            filter.connect(nGain);
+            nGain.connect(this.ctx.destination);
+            noise.start(now);
+          }
+        } catch (e) {}
+      }
+
+      playExplosion(scale = 1) {
+        if (this.muted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          const dur = Math.min(1.2, 0.45 * scale);
+          const buf = this.createNoiseBuffer(dur);
+          if (buf) {
+            const src = this.ctx.createBufferSource();
+            src.buffer = buf;
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(750, now);
+            filter.frequency.exponentialRampToValueAtTime(70, now + dur);
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(Math.min(0.45, 0.28 * scale), now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+            src.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.ctx.destination);
+            src.start(now);
+          }
+          const sub = this.ctx.createOscillator();
+          const sGain = this.ctx.createGain();
+          sub.type = 'sine';
+          sub.frequency.setValueAtTime(110, now);
+          sub.frequency.exponentialRampToValueAtTime(28, now + dur * 0.85);
+          sGain.gain.setValueAtTime(0.32, now);
+          sGain.gain.exponentialRampToValueAtTime(0.001, now + dur * 0.85);
+          sub.connect(sGain);
+          sGain.connect(this.ctx.destination);
+          sub.start(now);
+          sub.stop(now + dur * 0.9);
+        } catch (e) {}
+      }
+
+      playTransform(isGodOrBlue = false) {
+        if (this.muted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          // 上昇するエネルギーシンセ + 衝撃バースト
+          const notes = isGodOrBlue ? [220, 330, 440, 660, 880, 1174] : [196, 293, 392, 587, 784];
+          notes.forEach((freq, i) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = i % 2 === 0 ? 'sawtooth' : 'triangle';
+            const t = now + i * 0.065;
+            osc.frequency.setValueAtTime(freq, t);
+            osc.frequency.exponentialRampToValueAtTime(freq * 1.12, t + 0.14);
+            gain.gain.setValueAtTime(0.18, t);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(t);
+            osc.stop(t + 0.2);
+          });
+          setTimeout(() => this.playExplosion(1.15), 240);
+        } catch (e) {}
+      }
+
+      playSparkingBurst() {
+        if (this.muted || !this.ctx) return;
+        try {
+          const now = this.ctx.currentTime;
+          const chord = [261.6, 392.0, 523.25, 783.99];
+          chord.forEach((freq) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq, now);
+            osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + 0.45);
+            gain.gain.setValueAtTime(0.14, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.48);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.5);
+          });
+          this.playExplosion(1.1);
+        } catch (e) {}
+      }
+
+      updateChargeHum(active, sparking = false) {
+        if (this.muted || !this.ctx || !active) {
+          this.stopChargeHum();
+          return;
+        }
+        try {
+          if (!this.isChargingSound) {
+            const now = this.ctx.currentTime;
+            this.chargeOsc = this.ctx.createOscillator();
+            this.chargeGain = this.ctx.createGain();
+            this.chargeOsc.type = 'sawtooth';
+            this.chargeOsc.frequency.setValueAtTime(sparking ? 180 : 120, now);
+            this.chargeGain.gain.setValueAtTime(0.09, now);
+            this.chargeOsc.connect(this.chargeGain);
+            this.chargeGain.connect(this.ctx.destination);
+            this.chargeOsc.start(now);
+            this.isChargingSound = true;
+          } else if (this.chargeOsc && this.chargeGain) {
+            const targetFreq = sparking ? 240 + Math.sin(performance.now() * 0.03) * 35 : 135 + Math.sin(performance.now() * 0.02) * 20;
+            this.chargeOsc.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.05);
+          }
+        } catch (e) {}
+      }
+
+      stopChargeHum() {
+        if (this.isChargingSound && this.chargeOsc) {
+          try {
+            this.chargeOsc.stop();
+            this.chargeOsc.disconnect();
+          } catch (e) {}
+        }
+        this.chargeOsc = null;
+        this.chargeGain = null;
+        this.isChargingSound = false;
+      }
+
+      startBgm() {
+        if (this.muted || !this.ctx || this.bgmTimer) return;
+        // 疾走感のあるアクション・シンセベース＆リード
+        const bassLine = [110, 110, 130.8, 110, 146.8, 146.8, 164.8, 146.8];
+        const leadLine = [440, 523.25, 659.25, 587.33, 783.99, 659.25, 523.25, 587.33];
+        this.bgmStep = 0;
+
+        this.bgmTimer = setInterval(() => {
+          if (this.muted || !this.ctx || gameState.phase !== 'battle') return;
+          try {
+            const now = this.ctx.currentTime;
+            const bFreq = bassLine[this.bgmStep % bassLine.length];
+            const bOsc = this.ctx.createOscillator();
+            const bGain = this.ctx.createGain();
+            bOsc.type = 'triangle';
+            bOsc.frequency.setValueAtTime(bFreq, now);
+            bGain.gain.setValueAtTime(0.06, now);
+            bGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+            bOsc.connect(bGain);
+            bGain.connect(this.ctx.destination);
+            bOsc.start(now);
+            bOsc.stop(now + 0.17);
+
+            if (this.bgmStep % 2 === 0) {
+              const lFreq = leadLine[(this.bgmStep / 2) % leadLine.length];
+              const lOsc = this.ctx.createOscillator();
+              const lGain = this.ctx.createGain();
+              lOsc.type = 'square';
+              lOsc.frequency.setValueAtTime(lFreq, now);
+              lGain.gain.setValueAtTime(0.028, now);
+              lGain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+              lOsc.connect(lGain);
+              lGain.connect(this.ctx.destination);
+              lOsc.start(now);
+              lOsc.stop(now + 0.15);
+            }
+            this.bgmStep++;
+          } catch (e) {}
+        }, 185);
+      }
+
+      stopBgm() {
+        if (this.bgmTimer) {
+          clearInterval(this.bgmTimer);
+          this.bgmTimer = null;
+        }
+      }
+    }
+
+    const sound = new SoundEngine();
+
+    // --------------------------------------------------------------------------
+    // 2. キャラクター・形態・技・セリフ データ定義
+    // --------------------------------------------------------------------------
+    const ROSTER_DATA = {
+      goku: {
+        id: 'goku',
+        name: '孫悟空',
+        roleTag: '7形態変身',
+        shortDesc: 'ノーマル〜超サイヤ人1〜3・ゴッド・ブルー・超4まで変身！',
+        accent: '#f59e0b',
+        introQuote: '「オラ、ワクワクすっぞ！本気でこいよ！」',
+        winQuote: '「すげぇ戦いだった！またぜってぇ戦おうな！」',
+        loseQuote: '「くっそ〜…もっと修行して出直しだ！」',
+        forms: [
+          {
+            key: 'base',
+            label: 'ノーマル',
+            powerMult: 1.0,
+            speedMult: 1.0,
+            hairStyle: 'goku_base',
+            hairColor: '#111827',
+            hairHighlight: '#374151',
+            auraColor: 'rgba(248, 250, 252, 0.55)',
+            auraCore: '#ffffff',
+            giColor: '#ea580c',
+            obiColor: '#1d4ed8',
+            skill1Name: '界王拳チャージ',
+            skill1Type: 'charge_boost',
+            blast2Name: 'かめはめ波',
+            blast2Color: '#38bdf8',
+            blast2Style: 'beam',
+            ultName: '超元気玉 / 龍拳',
+            ultColor: '#60a5fa',
+            transformQuote: '「まだウォーミングアップだぜ！」'
+          },
+          {
+            key: 'ssj1',
+            label: '超サイヤ人',
+            powerMult: 1.18,
+            speedMult: 1.12,
+            hairStyle: 'ssj_spiky',
+            hairColor: '#facc15',
+            hairHighlight: '#fef9c3',
+            auraColor: 'rgba(250, 204, 21, 0.75)',
+            auraCore: '#fef08a',
+            giColor: '#ea580c',
+            obiColor: '#1d4ed8',
+            skill1Name: '瞬間移動＆気合ため',
+            skill1Type: 'charge_boost',
+            blast2Name: '超かめはめ波',
+            blast2Color: '#38bdf8',
+            blast2Style: 'beam',
+            ultName: '怒りの超かめはめ波',
+            ultColor: '#38bdf8',
+            transformQuote: '「オラは怒ったぞーっ！！」'
+          },
+          {
+            key: 'ssj2',
+            label: '超サイヤ人2',
+            powerMult: 1.32,
+            speedMult: 1.2,
+            hairStyle: 'ssj2_spiky',
+            hairColor: '#fde047',
+            hairHighlight: '#ffffff',
+            auraColor: 'rgba(253, 224, 71, 0.85)',
+            auraCore: '#ffffff',
+            lightning: true,
+            giColor: '#f97316',
+            obiColor: '#1d4ed8',
+            skill1Name: 'スパークラッシュ',
+            skill1Type: 'charge_boost',
+            blast2Name: 'フルパワーかめはめ波',
+            blast2Color: '#7dd3fc',
+            blast2Style: 'beam',
+            ultName: '電光石火ラッシュ',
+            ultColor: '#fde047',
+            transformQuote: '「これが超サイヤ人2を超えた力だ！」'
+          },
+          {
+            key: 'ssj3',
+            label: '超サイヤ人3',
+            powerMult: 1.48,
+            speedMult: 1.25,
+            hairStyle: 'ssj3_long',
+            hairColor: '#facc15',
+            hairHighlight: '#fef08a',
+            auraColor: 'rgba(251, 191, 36, 0.9)',
+            auraCore: '#fffbeb',
+            lightning: true,
+            giColor: '#ea580c',
+            obiColor: '#1d4ed8',
+            skill1Name: '限界気合ため',
+            skill1Type: 'charge_boost',
+            blast2Name: '超龍撃かめはめ波',
+            blast2Color: '#38bdf8',
+            blast2Style: 'beam',
+            ultName: '超サイヤ人3 龍拳爆発',
+            ultColor: '#f59e0b',
+            transformQuote: '「はああああっ！！これが超サイヤ人3だ！！」'
+          },
+          {
+            key: 'ssjg',
+            label: '超サイヤ人ゴッド',
+            powerMult: 1.62,
+            speedMult: 1.35,
+            hairStyle: 'goku_base',
+            hairColor: '#ef4444',
+            hairHighlight: '#fca5a5',
+            auraColor: 'rgba(248, 113, 113, 0.85)',
+            auraCore: '#fecaca',
+            flameAura: true,
+            giColor: '#ea580c',
+            obiColor: '#1d4ed8',
+            skill1Name: '神の気解放',
+            skill1Type: 'charge_boost',
+            blast2Name: 'ゴッドかめはめ波',
+            blast2Color: '#fb7185',
+            blast2Style: 'beam',
+            ultName: '神裂衝撃波',
+            ultColor: '#f43f5e',
+            transformQuote: '「すげぇ…体が軽くて、神の気があふれてくる！」'
+          },
+          {
+            key: 'ssjb',
+            label: '超サイヤ人ブルー',
+            powerMult: 1.78,
+            speedMult: 1.42,
+            hairStyle: 'ssj_spiky',
+            hairColor: '#22d3ee',
+            hairHighlight: '#cffafe',
+            auraColor: 'rgba(34, 211, 238, 0.88)',
+            auraCore: '#ecfeff',
+            flameAura: true,
+            giColor: '#ea580c',
+            obiColor: '#1d4ed8',
+            skill1Name: '界王拳×10 気迫',
+            skill1Type: 'charge_boost',
+            blast2Name: 'ゴッドかめはめ波・藍',
+            blast2Color: '#22d3ee',
+            blast2Style: 'beam',
+            ultName: '界王拳超かめはめ波',
+            ultColor: '#06b6d4',
+            transformQuote: '「超サイヤ人ゴッドを超えた超サイヤ人だ！」'
+          },
+          {
+            key: 'ssj4',
+            label: '超サイヤ人4 (GT)',
+            powerMult: 1.92,
+            speedMult: 1.48,
+            hairStyle: 'ssj4_wild',
+            hairColor: '#18181b',
+            hairHighlight: '#71717a',
+            auraColor: 'rgba(239, 68, 68, 0.9)',
+            auraCore: '#fde047',
+            furRed: true,
+            giColor: '#eab308',
+            obiColor: '#dc2626',
+            skill1Name: '黄金の気溜め',
+            skill1Type: 'charge_boost',
+            blast2Name: '10倍かめはめ波',
+            blast2Color: '#ef4444',
+            blast2Style: 'beam',
+            ultName: '龍拳爆発 (GT)',
+            ultColor: '#f97316',
+            transformQuote: '「究極のサイヤ人パワー、超サイヤ人4だ！！」'
+          }
+        ]
+      },
+      vegeta: {
+        id: 'vegeta',
+        name: 'ベジータ',
+        roleTag: '6形態変身',
+        shortDesc: 'サイヤ人の王子。超1・超2・ゴッド・ブルー・超4へ変身！',
+        accent: '#3b82f6',
+        introQuote: '「フン、サイヤ人の王子の力、思い知らせてやる！」',
+        winQuote: '「当然の結果だ。貴様ごときが俺に勝てると思うな！」',
+        loseQuote: '「ば、馬鹿な…このサイヤ人の誇りが…！」',
+        forms: [
+          {
+            key: 'base',
+            label: 'ノーマル',
+            powerMult: 1.02,
+            speedMult: 1.02,
+            hairStyle: 'vegeta_base',
+            hairColor: '#111827',
+            hairHighlight: '#374151',
+            auraColor: 'rgba(226, 232, 240, 0.55)',
+            auraCore: '#ffffff',
+            suitColor: '#1e3a8a',
+            armorColor: '#f8fafc',
+            skill1Name: '誇り高き気合',
+            skill1Type: 'charge_boost',
+            blast2Name: 'ギャリック砲',
+            blast2Color: '#c084fc',
+            blast2Style: 'beam',
+            ultName: 'ファイナルフラッシュ',
+            ultColor: '#eab308',
+            transformQuote: '「俺はサイヤ人の誇り高き王子だ！」'
+          },
+          {
+            key: 'ssj1',
+            label: '超サイヤ人',
+            powerMult: 1.2,
+            speedMult: 1.14,
+            hairStyle: 'vegeta_ssj',
+            hairColor: '#facc15',
+            hairHighlight: '#fef9c3',
+            auraColor: 'rgba(250, 204, 21, 0.78)',
+            auraCore: '#fef08a',
+            suitColor: '#1e3a8a',
+            armorColor: '#f8fafc',
+            skill1Name: 'ビッグバン気弾',
+            skill1Type: 'charge_boost',
+            blast2Name: 'ビッグバンアタック',
+            blast2Color: '#38bdf8',
+            blast2Style: 'orb',
+            ultName: '超ファイナルフラッシュ',
+            ultColor: '#facc15',
+            transformQuote: '「見せてやる、これが超サイヤ人の力だ！」'
+          },
+          {
+            key: 'ssj2',
+            label: '超サイヤ人2',
+            powerMult: 1.35,
+            speedMult: 1.22,
+            hairStyle: 'vegeta_ssj2',
+            hairColor: '#fde047',
+            hairHighlight: '#ffffff',
+            auraColor: 'rgba(253, 224, 71, 0.86)',
+            auraCore: '#ffffff',
+            lightning: true,
+            suitColor: '#1e3a8a',
+            armorColor: '#e2e8f0',
+            skill1Name: '王子の激昂',
+            skill1Type: 'charge_boost',
+            blast2Name: 'ファイナルインパクト',
+            blast2Color: '#a855f7',
+            blast2Style: 'beam',
+            ultName: 'ファイナルエクスプロージョン',
+            ultColor: '#f97316',
+            transformQuote: '「貴様を粉々に吹き飛ばしてやる！」'
+          },
+          {
+            key: 'ssjg',
+            label: '超サイヤ人ゴッド',
+            powerMult: 1.63,
+            speedMult: 1.36,
+            hairStyle: 'vegeta_base',
+            hairColor: '#ef4444',
+            hairHighlight: '#fca5a5',
+            auraColor: 'rgba(248, 113, 113, 0.85)',
+            auraCore: '#fecaca',
+            flameAura: true,
+            suitColor: '#1e3a8a',
+            armorColor: '#f8fafc',
+            skill1Name: '神の闘気',
+            skill1Type: 'charge_boost',
+            blast2Name: 'ゴッドギャリック砲',
+            blast2Color: '#f43f5e',
+            blast2Style: 'beam',
+            ultName: '紅蓮のファイナルフラッシュ',
+            ultColor: '#fb7185',
+            transformQuote: '「赤き神の力…この俺が使いこなす！」'
+          },
+          {
+            key: 'ssjb',
+            label: '超サイヤ人ブルー',
+            powerMult: 1.8,
+            speedMult: 1.44,
+            hairStyle: 'vegeta_ssj',
+            hairColor: '#22d3ee',
+            hairHighlight: '#cffafe',
+            auraColor: 'rgba(34, 211, 238, 0.9)',
+            auraCore: '#ecfeff',
+            flameAura: true,
+            suitColor: '#1e3a8a',
+            armorColor: '#f8fafc',
+            skill1Name: '青き限界突破',
+            skill1Type: 'charge_boost',
+            blast2Name: 'ガンマバーストフラッシュ',
+            blast2Color: '#22d3ee',
+            blast2Style: 'beam',
+            ultName: 'ファイナルフラッシュ (BLUE)',
+            ultColor: '#38bdf8',
+            transformQuote: '「この蒼き気こそ、極限を超えた王子の証だ！」'
+          },
+          {
+            key: 'ssj4',
+            label: '超サイヤ人4 (GT)',
+            powerMult: 1.9,
+            speedMult: 1.46,
+            hairStyle: 'ssj4_wild',
+            hairColor: '#18181b',
+            hairHighlight: '#71717a',
+            auraColor: 'rgba(239, 68, 68, 0.9)',
+            auraCore: '#fde047',
+            furRed: true,
+            suitColor: '#1d4ed8',
+            armorColor: '#facc15',
+            skill1Name: 'ブルーツ波増幅',
+            skill1Type: 'charge_boost',
+            blast2Name: 'ファイナルシャインアタック',
+            blast2Color: '#f43f5e',
+            blast2Style: 'orb',
+            ultName: '超サイヤ人4 ファイナルフラッシュ',
+            ultColor: '#ef4444',
+            transformQuote: '「カカロットに負けるか！これが超サイヤ人4だ！」'
+          }
+        ]
+      },
+      pan: {
+        id: 'pan',
+        name: 'パン (GT)',
+        roleTag: 'GTヒロイン',
+        shortDesc: 'バンダナ＆赤ベストの元気娘！スピードラッシュと気弾連射が得意。',
+        accent: '#ec4899',
+        introQuote: '「あたしのパワー、なめてると痛い目見るよ！」',
+        winQuote: '「やったーっ！おじいちゃんにも自慢しよっと！」',
+        loseQuote: '「ううっ…悔しい〜！もう一回やらせて！」',
+        forms: [
+          {
+            key: 'gt_base',
+            label: 'GTファイター',
+            powerMult: 1.15,
+            speedMult: 1.24,
+            hairStyle: 'pan_gt',
+            hairColor: '#111827',
+            hairHighlight: '#4b5563',
+            auraColor: 'rgba(244, 114, 182, 0.75)',
+            auraCore: '#fbcfe8',
+            bandanaColor: '#facc15',
+            vestColor: '#dc2626',
+            shirtColor: '#2563eb',
+            skill1Name: '元気いっぱい気合',
+            skill1Type: 'charge_boost',
+            blast2Name: 'かめはめ波 (パン流)',
+            blast2Color: '#38bdf8',
+            blast2Style: 'beam',
+            ultName: 'メイデンブラストラッシュ',
+            ultColor: '#f472b6',
+            transformQuote: '「気合い満タン！いくよーっ！」'
+          }
+        ]
+      },
+      videl: {
+        id: 'videl',
+        name: 'ビーデル (Z)',
+        roleTag: 'Z格闘家',
+        shortDesc: 'ツインテールの武道家！舞空術とスピーディな連続攻撃で挑む。',
+        accent: '#a855f7',
+        introQuote: '「サタンシティの誇り、見せてあげるわ！」',
+        winQuote: '「ふぅ、なかなかやるわね。でもあたしの勝ちよ！」',
+        loseQuote: '「くっ…舞空術の修行、もっと頑張らないと…！」',
+        forms: [
+          {
+            key: 'z_base',
+            label: 'Z武道家',
+            powerMult: 1.12,
+            speedMult: 1.22,
+            hairStyle: 'videl_z',
+            hairColor: '#111827',
+            hairHighlight: '#4b5563',
+            auraColor: 'rgba(192, 132, 252, 0.72)',
+            auraCore: '#f3e8ff',
+            outfitTop: '#7e22ce',
+            outfitBottom: '#f8fafc',
+            skill1Name: '舞空術集中',
+            skill1Type: 'charge_boost',
+            blast2Name: 'ライジングラッシュ',
+            blast2Color: '#c084fc',
+            blast2Style: 'orb',
+            ultName: 'サタンファイナルスパーク',
+            ultColor: '#e879f9',
+            transformQuote: '「集中して…一気に決めるわ！」'
+          }
+        ]
+      },
+      frieza: {
+        id: 'frieza',
+        name: 'フリーザ',
+        roleTag: '形態変化',
+        shortDesc: '宇宙の帝王。第1形態〜最終形態・ゴールデンフリーザへ変身！',
+        accent: '#c084fc',
+        introQuote: '「さあ、私をどれほど楽しませてくれますか…？」',
+        winQuote: '「おやおや、もう終わりですか？つまらないですね。」',
+        loseQuote: '「この私が…こんなところで…許さんぞ…！！」',
+        forms: [
+          {
+            key: 'form1',
+            label: '第1形態',
+            powerMult: 1.05,
+            speedMult: 1.05,
+            hairStyle: 'frieza_1',
+            hairColor: '#e9d5ff',
+            hairHighlight: '#ffffff',
+            auraColor: 'rgba(192, 132, 252, 0.75)',
+            auraCore: '#f3e8ff',
+            bodyColor: '#f3e8ff',
+            bioArmor: '#9333ea',
+            skill1Name: '帝王の威圧',
+            skill1Type: 'charge_boost',
+            blast2Name: 'デスビーム',
+            blast2Color: '#e879f9',
+            blast2Style: 'beam',
+            ultName: 'デスボール',
+            ultColor: '#a855f7',
+            transformQuote: '「この変身をとくとご覧ください！」'
+          },
+          {
+            key: 'final',
+            label: '最終形態',
+            powerMult: 1.38,
+            speedMult: 1.28,
+            hairStyle: 'frieza_final',
+            hairColor: '#ffffff',
+            hairHighlight: '#e9d5ff',
+            auraColor: 'rgba(216, 180, 254, 0.85)',
+            auraCore: '#ffffff',
+            bodyColor: '#ffffff',
+            bioArmor: '#7e22ce',
+            skill1Name: 'フルパワー気弾',
+            skill1Type: 'charge_boost',
+            blast2Name: 'デススライサー',
+            blast2Color: '#f0abfc',
+            blast2Style: 'orb',
+            ultName: 'スーパーノヴァ',
+            ultColor: '#d946ef',
+            transformQuote: '「これが私の真の姿…恐怖に震えるがいい！」'
+          },
+          {
+            key: 'golden',
+            label: 'ゴールデンフリーザ',
+            powerMult: 1.78,
+            speedMult: 1.42,
+            hairStyle: 'frieza_final',
+            hairColor: '#facc15',
+            hairHighlight: '#fef9c3',
+            auraColor: 'rgba(250, 204, 21, 0.9)',
+            auraCore: '#fef08a',
+            bodyColor: '#facc15',
+            bioArmor: '#7e22ce',
+            skill1Name: '黄金の帝王気',
+            skill1Type: 'charge_boost',
+            blast2Name: 'ゴールデンデスビーム',
+            blast2Color: '#facc15',
+            blast2Style: 'beam',
+            ultName: 'アースブレイカー',
+            ultColor: '#f59e0b',
+            transformQuote: '「お待たせしました。これがゴールデンフリーザです！」'
+          }
+        ]
+      }
+    };
+
+    const STAGES_DATA = [
+      { id: 'wasteland', name: '荒野の決戦場', skyTop: '#0f172a', skyMid: '#1e3a5f', skyBot: '#d97706', groundTop: '#78350f', groundBot: '#451a03' },
+      { id: 'tournament', name: '天下一武道会', skyTop: '#0c4a6e', skyMid: '#38bdf8', skyBot: '#bae6fd', groundTop: '#cbd5e1', groundBot: '#64748b' },
+      { id: 'planet', name: '崩壊の惑星', skyTop: '#180924', skyMid: '#581c87', skyBot: '#ea580c', groundTop: '#311042', groundBot: '#14051c' }
+    ];
+
+    // --------------------------------------------------------------------------
+    // 3. ゲーム状態・入力管理
+    // --------------------------------------------------------------------------
+    const gameState = {
+      phase: 'select', // 'select' | 'battle' | 'result'
+      p1Id: 'goku',
+      p2Id: 'frieza',
+      stageId: 'wasteland',
+      timer: 99,
+      hitstop: 0,
+      shakeTimer: 0,
+      shakeMagnitude: 0,
+      screenFlashColor: null,
+      screenFlashAlpha: 0,
+      darknessAlpha: 0,
+      particles: [],
+      projectiles: [],
+      beams: [],
+      shockwaves: [],
+      floatingTexts: [],
+      stats: {
+        maxCombo: 0,
+        transforms: 0,
+        dmgDealt: 0
+      }
+    };
+
+    const inputState = {
+      up: false,
+      down: false,
+      left: false,
+      right: false,
+      guard: false,
+      charge: false,
+      lastTapTime: { left: 0, right: 0 }
+    };
+
+    // --------------------------------------------------------------------------
+    // 4. ファイタークラス（物理・気力・スキルストック・SPARKING・技・AI）
+    // --------------------------------------------------------------------------
+    class Fighter {
+      constructor(charId, isPlayer, x, y, facing) {
+        this.charId = charId;
+        this.data = ROSTER_DATA[charId];
+        this.isPlayer = isPlayer;
+        this.formIndex = 0;
+
+        this.maxHp = 1000;
+        this.hp = this.maxHp;
+        this.maxKi = 100;
+        this.ki = 45;
+        this.maxSp = 100;
+        this.spGauge = 0;
+        this.sparkingTimer = 0; // > 0 でSPARKINGモード中
+        this.sparkingDuration = 9.0;
+
+        this.maxSkillStock = 5;
+        this.skillStock = 3;
+        this.stockRegenTimer = 0;
+
+        this.x = x;
+        this.y = y;
+        this.vx = 0;
+        this.vy = 0;
+        this.facing = facing; // 1: 右向き, -1: 左向き
+        this.radius = 28;
+
+        this.state = 'idle'; // 'idle' | 'move' | 'dash' | 'guard' | 'charge' | 'attack' | 'blast' | 'ultimate' | 'hurt' | 'counter' | 'ko'
+        this.stateTimer = 0;
+        this.comboStep = 0;
+        this.comboWindow = 0;
+        this.comboCount = 0;
+        this.hasHitThisSwing = false;
+        this.chargeBoostTimer = 0;
+        this.invulnTimer = 0;
+        this.animTime = Math.random() * 10;
+
+        // AI用タイマー
+        this.aiDecisionTimer = 0.25;
+        this.aiMoveDir = 0;
+        this.aiVertDir = 0;
+        this.aiHoldCharge = false;
+        this.aiHoldGuard = false;
+      }
+
+      get form() {
+        return this.data.forms[this.formIndex] || this.data.forms[0];
+      }
+
+      get isSparking() {
+        return this.sparkingTimer > 0;
+      }
+
+      get name() {
+        return this.data.name;
+      }
+
+      say(text) {
+        if (this.isPlayer) {
+          showDialogue(this.name, text);
+        } else if (Math.random() < 0.55) {
+          showDialogue(this.name + ' (CPU)', text);
+        }
+      }
+
+      gainSkillStock(amount = 1) {
+        this.skillStock = Math.min(this.maxSkillStock, this.skillStock + amount);
+      }
+
+      addKi(amount) {
+        this.ki = Math.max(0, Math.min(this.maxKi, this.ki + amount));
+      }
+
+      addSp(amount) {
+        if (this.isSparking) return;
+        this.spGauge = Math.min(this.maxSp, this.spGauge + amount);
+        if (this.spGauge >= this.maxSp) {
+          this.enterSparking();
+        }
+      }
+
+      enterSparking() {
+        this.spGauge = 0;
+        this.sparkingTimer = this.sparkingDuration;
+        this.addKi(40);
+        this.gainSkillStock(1);
+        sound.playSparkingBurst();
+        triggerShake(0.35, 10);
+        spawnShockwave(this.x, this.y, this.form.auraColor, 130);
+        spawnBurstParticles(this.x, this.y, this.form.auraCore, 28, 260);
+        addFloatingText(this.x, this.y - 52, 'SPARKING!!', '#facc15');
+        this.say('「限界を超えた…これがSPARKINGだ！！」');
+      }
+
+      // リアルタイム変身・形態切替（Tキー または 1-7キー または 変身ボタン）
+      transformTo(targetIndex = null) {
+        const total = this.data.forms.length;
+        if (total <= 1) {
+          addFloatingText(this.x, this.y - 45, '形態変化なし', '#cbd5e1');
+          return;
+        }
+        let nextIdx = targetIndex !== null ? targetIndex : (this.formIndex + 1) % total;
+        if (nextIdx < 0 || nextIdx >= total || nextIdx === this.formIndex) return;
+
+        // 変身コスト（スキルストック1消費、またはSPARKING中は無料）
+        if (!this.isSparking && this.skillStock < 1) {
+          addFloatingText(this.x, this.y - 45, 'スキルストック不足 (要1)', '#f87171');
+          return;
+        }
+        if (!this.isSparking) {
+          this.skillStock -= 1;
+        }
+
+        const prevHpRatio = this.hp / this.maxHp;
+        this.formIndex = nextIdx;
+        const f = this.form;
+
+        // 形態に応じた最大HP微増＆気力回復
+        this.maxHp = Math.round(1000 * (0.95 + f.powerMult * 0.12));
+        this.hp = Math.min(this.maxHp, Math.round(this.maxHp * prevHpRatio) + 45);
+        this.addKi(25);
+        this.invulnTimer = 0.65;
+        this.state = 'idle';
+        this.stateTimer = 0;
+
+        if (this.isPlayer) {
+          gameState.stats.transforms++;
+        }
+
+        const isGodOrBlue = f.key.includes('ssjg') || f.key.includes('ssjb') || f.key.includes('ssj4') || f.key === 'golden';
+        sound.playTransform(isGodOrBlue);
+        triggerShake(0.45, 13);
+        triggerFlash(f.auraCore, 0.45);
+        triggerDarkness(0.55);
+        spawnShockwave(this.x, this.y, f.auraColor, 165);
+        spawnBurstParticles(this.x, this.y, f.hairHighlight, 36, 310);
+        addFloatingText(this.x, this.y - 62, `${f.label}！！`, f.hairHighlight);
+        showCutin(f.label + '！！', `${this.name} ・ 形態変化`, f.transformQuote, f.auraColor);
+        this.say(f.transformQuote);
+        updateHud();
+      }
+
+      // ドラゴンダッシュ
+      startDragonDash(dirX, dirY) {
+        if (this.ki < 12) {
+          addFloatingText(this.x, this.y - 40, '気力不足', '#38bdf8');
+          return;
+        }
+        this.ki -= 12;
+        this.state = 'dash';
+        this.stateTimer = 0.24;
+        const len = Math.hypot(dirX, dirY) || 1;
+        const speed = 640 * this.form.speedMult;
+        this.vx = (dirX / len) * speed;
+        this.vy = (dirY / len) * speed;
+        if (Math.abs(dirX) > 0.1) this.facing = dirX > 0 ? 1 : -1;
+        sound.playDash();
+        spawnBurstParticles(this.x, this.y, this.form.auraCore, 10, 140);
+      }
+
+      // ラッシュ攻撃（連撃・打ち上げ・追撃）
+      startRushAttack(opponent) {
+        if (this.state === 'hurt' || this.state === 'ko') return;
+        // 相手が遠くにいる場合は自動接近ドラゴンダッシュ
+        const dx = opponent.x - this.x;
+        const dy = opponent.y - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 95 && this.ki >= 12) {
+          this.startDragonDash(dx, dy);
+          return;
+        }
+
+        if (dx !== 0) this.facing = dx > 0 ? 1 : -1;
+        this.comboStep = this.comboWindow > 0 ? (this.comboStep % 4) + 1 : 1;
+        this.comboWindow = 0.65;
+        this.state = 'attack';
+        this.stateTimer = this.comboStep === 4 ? 0.34 : 0.2;
+        this.hasHitThisSwing = false;
+
+        const lunge = (this.comboStep === 4 ? 260 : 140) * this.form.speedMult;
+        this.vx = this.facing * lunge;
+        this.vy = this.comboStep === 3 ? -120 : 0;
+        sound.playDash();
+      }
+
+      // 気弾射出
+      fireKiBlast(opponent) {
+        if (this.state === 'hurt' || this.state === 'ko') return;
+        const cost = this.isSparking ? 3 : 10;
+        if (this.ki < cost) {
+          addFloatingText(this.x, this.y - 40, '気力不足', '#38bdf8');
+          return;
+        }
+        this.ki -= cost;
+        const dx = opponent.x - this.x;
+        const dy = opponent.y - this.y;
+        if (dx !== 0) this.facing = dx > 0 ? 1 : -1;
+        const angle = Math.atan2(dy, dx);
+        const speed = 560 * Math.min(1.3, this.form.speedMult);
+
+        this.state = 'blast';
+        this.stateTimer = 0.16;
+        this.vx = -this.facing * 45;
+
+        gameState.projectiles.push({
+          owner: this,
+          x: this.x + this.facing * 26,
+          y: this.y - 4,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          radius: 10,
+          damage: Math.round(28 * this.form.powerMult * (this.isSparking ? 1.25 : 1)),
+          color: this.form.blast2Color || '#38bdf8',
+          coreColor: '#ffffff',
+          life: 1.8
+        });
+        sound.playKiBlast();
+      }
+
+      // ブラスト1（スキル系：気力チャージ補助・気合ため・バフ）
+      useBlast1() {
+        if (this.state === 'hurt' || this.state === 'ko') return;
+        if (this.skillStock < 1) {
+          addFloatingText(this.x, this.y - 45, 'スキルストック不足 (要1)', '#f87171');
+          return;
+        }
+        this.skillStock -= 1;
+        this.addKi(55);
+        this.addSp(25);
+        this.chargeBoostTimer = 6.0;
+        this.invulnTimer = 0.35;
+        this.state = 'idle';
+        this.stateTimer = 0.15;
+
+        sound.playTransform(false);
+        spawnShockwave(this.x, this.y, this.form.auraColor, 95);
+        spawnBurstParticles(this.x, this.y, this.form.auraCore, 20, 190);
+        addFloatingText(this.x, this.y - 52, `${this.form.skill1Name}！`, '#c084fc');
+        this.say(`「${this.form.skill1Name}！！」`);
+      }
+
+      // ブラスト2（必殺技系：かめはめ波・ギャリック砲・デスビーム等）
+      useBlast2(opponent) {
+        if (this.state === 'hurt' || this.state === 'ko') return;
+        const cost = this.isSparking ? 20 : 40;
+        if (this.ki < cost) {
+          addFloatingText(this.x, this.y - 45, `気力不足 (要${cost})`, '#38bdf8');
+          return;
+        }
+        this.ki -= cost;
+        const dx = opponent.x - this.x;
+        if (dx !== 0) this.facing = dx > 0 ? 1 : -1;
+
+        this.state = 'blast';
+        this.stateTimer = 0.55;
+        this.vx = 0;
+        this.vy = 0;
+
+        const f = this.form;
+        this.say(`「${f.blast2Name}っ！！」`);
+        addFloatingText(this.x, this.y - 55, f.blast2Name + '！', f.blast2Color);
+
+        if (f.blast2Style === 'orb') {
+          const angle = Math.atan2(opponent.y - this.y, opponent.x - this.x);
+          gameState.projectiles.push({
+            owner: this,
+            x: this.x + this.facing * 32,
+            y: this.y - 6,
+            vx: Math.cos(angle) * 520,
+            vy: Math.sin(angle) * 520,
+            radius: 22,
+            damage: Math.round(115 * f.powerMult * (this.isSparking ? 1.25 : 1)),
+            color: f.blast2Color,
+            coreColor: '#ffffff',
+            isBigOrb: true,
+            life: 2.2
+          });
+          sound.playKiBlast();
+          sound.playHit(true);
+        } else {
+          // ビーム系ブラスト2
+          gameState.beams.push({
+            owner: this,
+            x: this.x + this.facing * 24,
+            y: this.y - 4,
+            dir: this.facing,
+            width: 34,
+            length: 520,
+            damagePerTick: Math.round(28 * f.powerMult * (this.isSparking ? 1.25 : 1)),
+            tickTimer: 0,
+            hitCount: 0,
+            maxHits: 5,
+            life: 0.65,
+            maxLife: 0.65,
+            color: f.blast2Color,
+            isUltimate: false
+          });
+          sound.playBeam(0.68, false);
+          triggerShake(0.28, 7);
+        }
+      }
+
+      // アルティメットブラスト（SPARKING中または気力満タン+スキルストック2で発動可能）
+      useUltimateBlast(opponent) {
+        if (this.state === 'hurt' || this.state === 'ko') return;
+        const canUse = this.isSparking || (this.ki >= 85 && this.skillStock >= 2);
+        if (!canUse) {
+          addFloatingText(this.x, this.y - 48, 'SPARKING中 または 気力85+ストック2要', '#fb7185');
+          return;
+        }
+        if (this.isSparking) {
+          this.sparkingTimer = Math.max(0, this.sparkingTimer - 3.5);
+          this.ki = Math.max(0, this.ki - 30);
+        } else {
+          this.ki -= 85;
+          this.skillStock -= 2;
+        }
+
+        const dx = opponent.x - this.x;
+        if (dx !== 0) this.facing = dx > 0 ? 1 : -1;
+
+        this.state = 'ultimate';
+        this.stateTimer = 0.95;
+        this.invulnTimer = 0.95;
+        this.vx = 0;
+        this.vy = 0;
+
+        const f = this.form;
+        sound.playBeam(0.95, true);
+        triggerShake(0.65, 16);
+        triggerFlash(f.ultColor, 0.35);
+        triggerDarkness(0.65);
+        showCutin(f.ultName + '！！', `${this.name} ・ アルティメットブラスト`, `「くらえっ！${f.ultName}！！」`, f.ultColor);
+        this.say(`「くらえっ！${f.ultName}！！」`);
+
+        gameState.beams.push({
+          owner: this,
+          x: this.x + this.facing * 26,
+          y: this.y - 6,
+          dir: this.facing,
+          width: 66,
+          length: 560,
+          damagePerTick: Math.round(48 * f.powerMult),
+          tickTimer: 0,
+          hitCount: 0,
+          maxHits: 6,
+          life: 0.92,
+          maxLife: 0.92,
+          color: f.ultColor,
+          isUltimate: true
+        });
+      }
+
+      // リベンジカウンター（攻撃を受けている最中にスキルストック1消費で割り込み・正面攻撃に有効）
+      tryRevengeCounter(opponent) {
+        if (this.state === 'ko') return false;
+        if (this.skillStock < 1) {
+          addFloatingText(this.x, this.y - 45, 'スキルストック不足 (要1)', '#f87171');
+          return false;
+        }
+        const dx = opponent.x - this.x;
+        const attackingFromFront = (dx >= 0 && this.facing === 1) || (dx <= 0 && this.facing === -1);
+        if (!attackingFromFront && this.state !== 'hurt') {
+          addFloatingText(this.x, this.y - 45, '正面からの攻撃に有効！', '#fbbf24');
+          return false;
+        }
+
+        this.skillStock -= 1;
+        this.state = 'counter';
+        this.stateTimer = 0.35;
+        this.invulnTimer = 0.45;
+        this.vx = this.facing * 240;
+        sound.playCounter();
+        triggerShake(0.25, 9);
+        spawnShockwave(this.x, this.y, '#f97316', 105);
+        spawnBurstParticles(this.x, this.y, '#fde047', 22, 220);
+        addFloatingText(this.x, this.y - 52, 'リベンジカウンター！！', '#fb923c');
+        this.say('「甘いぜ！リベンジカウンター！！」');
+
+        // 近い相手に反撃ヒット
+        if (Math.hypot(opponent.x - this.x, opponent.y - this.y) < 135) {
+          opponent.takeDamage(Math.round(95 * this.form.powerMult), this.facing * 460, -180, true, this);
+        }
+        return true;
+      }
+
+      // 被弾処理
+      takeDamage(amount, knockVx, knockVy, isHeavy = false, attacker = null) {
+        if (this.invulnTimer > 0 || this.state === 'ko') return;
+
+        // ガード判定（正面からの攻撃をガード）
+        const fromFront = attacker ? ((attacker.x - this.x >= 0 && this.facing === 1) || (attacker.x - this.x <= 0 && this.facing === -1)) : true;
+        if (this.state === 'guard' && fromFront && !isHeavy) {
+          const chipDmg = Math.max(2, Math.round(amount * 0.15));
+          this.hp = Math.max(1, this.hp - chipDmg);
+          this.vx = knockVx * 0.35;
+          this.addKi(6);
+          if (attacker) attacker.addSp(5);
+          sound.playGuard();
+          spawnBurstParticles(this.x + this.facing * 18, this.y, '#6ee7b7', 8, 120);
+          addFloatingText(this.x, this.y - 42, 'GUARD', '#6ee7b7');
+          return;
+        }
+
+        // タイミングカウンター（ガード直前〜攻撃発生直前のカウンター）
+        if (this.state === 'guard' && this.stateTimer < 0.16 && attacker) {
+          this.state = 'counter';
+          this.stateTimer = 0.32;
+          this.invulnTimer = 0.35;
+          this.vx = this.facing * 220;
+          sound.playCounter();
+          spawnShockwave(this.x, this.y, '#38bdf8', 95);
+          addFloatingText(this.x, this.y - 52, 'Zカウンター！！', '#38bdf8');
+          attacker.takeDamage(Math.round(75 * this.form.powerMult), this.facing * 380, -140, true, this);
+          return;
+        }
+
+        this.hp = Math.max(0, this.hp - amount);
+        this.vx = knockVx;
+        this.vy = knockVy;
+        this.state = this.hp <= 0 ? 'ko' : 'hurt';
+        this.stateTimer = this.hp <= 0 ? 1.5 : (isHeavy ? 0.34 : 0.2);
+        this.addKi(8);
+        this.addSp(7);
+
+        if (attacker) {
+          attacker.addKi(7);
+          attacker.addSp(isHeavy ? 14 : 9);
+          attacker.comboCount++;
+          if (attacker.isPlayer) {
+            gameState.stats.dmgDealt += amount;
+            gameState.stats.maxCombo = Math.max(gameState.stats.maxCombo, attacker.comboCount);
+          }
+        }
+
+        gameState.hitstop = isHeavy ? 0.065 : 0.03;
+        sound.playHit(isHeavy);
+        triggerShake(isHeavy ? 0.26 : 0.11, isHeavy ? 10 : 4);
+        spawnBurstParticles(this.x, this.y, isHeavy ? '#facc15' : '#ffffff', isHeavy ? 18 : 10, isHeavy ? 230 : 150);
+        addFloatingText(this.x + (Math.random() * 20 - 10), this.y - 44, `${amount}`, isHeavy ? '#fde047' : '#ffffff');
+
+        if (this.hp <= 0) {
+          sound.playExplosion(1.3);
+          spawnShockwave(this.x, this.y, '#f97316', 150);
+          spawnBurstParticles(this.x, this.y, '#ef4444', 35, 300);
+          this.say(this.data.loseQuote);
+        }
+      }
+
+      update(dt, opponent, bounds) {
+        this.animTime += dt;
+        if (this.invulnTimer > 0) this.invulnTimer -= dt;
+        if (this.comboWindow > 0) {
+          this.comboWindow -= dt;
+          if (this.comboWindow <= 0) {
+            this.comboStep = 0;
+            this.comboCount = 0;
+          }
+        }
+        if (this.chargeBoostTimer > 0) this.chargeBoostTimer -= dt;
+
+        // SPARKINGモード時間経過＆気力自動回復
+        if (this.isSparking) {
+          this.sparkingTimer = Math.max(0, this.sparkingTimer - dt);
+          this.addKi(16 * dt);
+          if (Math.random() < 0.35) {
+            spawnBurstParticles(
+              this.x + (Math.random() * 44 - 22),
+              this.y + (Math.random() * 54 - 27),
+              this.form.auraCore,
+              2,
+              80
+            );
+          }
+        } else {
+          this.addKi(4.2 * dt);
+        }
+
+        // スキルストック自然回復
+        if (this.skillStock < this.maxSkillStock) {
+          this.stockRegenTimer += dt;
+          if (this.stockRegenTimer >= 4.2) {
+            this.stockRegenTimer = 0;
+            this.skillStock++;
+          }
+        }
+
+        if (this.state === 'ko') {
+          this.vx *= 0.92;
+          this.vy += 420 * dt;
+          this.x += this.vx * dt;
+          this.y += this.vy * dt;
+          if (this.y > bounds.floorY) {
+            this.y = bounds.floorY;
+            this.vy = 0;
+          }
+          return;
+        }
+
+        // 状態タイマー進行
+        if (this.stateTimer > 0) {
+          this.stateTimer -= dt;
+          if (this.stateTimer <= 0 && this.state !== 'guard' && this.state !== 'charge') {
+            this.state = 'idle';
+          }
+        }
+
+        // プレイヤー入力またはCPU AI
+        if (this.isPlayer) {
+          this.handlePlayerInput(dt, opponent);
+        } else {
+          this.handleCpuAi(dt, opponent);
+        }
+
+        // ラッシュ攻撃の当たり判定
+        if (this.state === 'attack' && !this.hasHitThisSwing && this.stateTimer < 0.15) {
+          const dx = opponent.x - this.x;
+          const dy = opponent.y - this.y;
+          const inFront = (dx * this.facing >= -15) && (dx * this.facing <= 95);
+          if (inFront && Math.abs(dy) < 52) {
+            this.hasHitThisSwing = true;
+            const isFinisher = this.comboStep === 4;
+            const boost = this.chargeBoostTimer > 0 ? 1.2 : 1.0;
+            const spMult = this.isSparking ? 1.25 : 1.0;
+            const dmg = Math.round((isFinisher ? 52 : 24) * this.form.powerMult * boost * spMult);
+            const kvx = this.facing * (isFinisher ? 440 : 110);
+            const kvy = this.comboStep === 3 ? -220 : (isFinisher ? -120 : -20);
+            opponent.takeDamage(dmg, kvx, kvy, isFinisher, this);
+
+            // SPARKING中はフィニッシュ後に追撃気弾や追加ゲージ
+            if (isFinisher && this.isSparking) {
+              this.addSp(10);
+            }
+          }
+        }
+
+        // 物理移動・減速
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+
+        if (this.state !== 'dash' && this.state !== 'hurt') {
+          this.vx *= Math.pow(0.0015, dt);
+          this.vy *= Math.pow(0.002, dt);
+        } else {
+          this.vx *= Math.pow(0.08, dt);
+          this.vy *= Math.pow(0.08, dt);
+        }
+
+        // 画面内境界制限（9:16 キャンバス内）
+        this.x = Math.max(bounds.left, Math.min(bounds.right, this.x));
+        this.y = Math.max(bounds.ceilingY, Math.min(bounds.floorY, this.y));
+
+        // 相手との重なり緩和
+        const sepDx = this.x - opponent.x;
+        const sepDy = this.y - opponent.y;
+        const sepDist = Math.hypot(sepDx, sepDy);
+        if (sepDist > 0 && sepDist < 42 && this.state !== 'dash' && opponent.state !== 'dash') {
+          const push = (42 - sepDist) * 0.5;
+          const nx = sepDx / sepDist;
+          const ny = sepDy / sepDist;
+          this.x += nx * push;
+          this.y += ny * push * 0.5;
+        }
+      }
+
+      handlePlayerInput(dt, opponent) {
+        const locked = this.state === 'hurt' || this.state === 'ultimate';
+        if (locked) {
+          sound.updateChargeHum(false);
+          return;
+        }
+
+        if (inputState.guard && this.state !== 'attack' && this.state !== 'blast') {
+          this.state = 'guard';
+          this.stateTimer = 0.08;
+          const dx = opponent.x - this.x;
+          if (dx !== 0) this.facing = dx > 0 ? 1 : -1;
+          sound.updateChargeHum(false);
+          return;
+        }
+
+        if (inputState.charge && this.state !== 'attack' && this.state !== 'blast') {
+          this.state = 'charge';
+          this.stateTimer = 0.08;
+          const rate = (this.chargeBoostTimer > 0 ? 34 : 22) * dt;
+          this.addKi(rate);
+          this.addSp(14 * dt);
+          sound.updateChargeHum(true, this.isSparking);
+
+          // 気溜め中の地面・オーラ演出
+          if (Math.random() < 0.65) {
+            spawnBurstParticles(
+              this.x + (Math.random() * 48 - 24),
+              this.y + 24,
+              this.form.auraColor,
+              2,
+              95
+            );
+          }
+          if (Math.random() < 0.25) {
+            spawnShockwave(this.x, this.y + 22, this.form.auraColor, 55);
+          }
+          return;
+        } else {
+          sound.updateChargeHum(false);
+          if (this.state === 'charge') this.state = 'idle';
+        }
+
+        // 移動（左右上下・浮遊）
+        let moveX = 0;
+        let moveY = 0;
+        if (inputState.left) moveX -= 1;
+        if (inputState.right) moveX += 1;
+        if (inputState.up) moveY -= 1;
+        if (inputState.down) moveY += 1;
+
+        if ((moveX !== 0 || moveY !== 0) && (this.state === 'idle' || this.state === 'move')) {
+          this.state = 'move';
+          const spd = 250 * this.form.speedMult * (this.isSparking ? 1.15 : 1.0);
+          const len = Math.hypot(moveX, moveY);
+          this.vx += ((moveX / len) * spd - this.vx) * Math.min(1, dt * 16);
+          this.vy += ((moveY / len) * (spd * 0.82) - this.vy) * Math.min(1, dt * 16);
+          if (moveX !== 0 && this.stateTimer <= 0) {
+            this.facing = moveX > 0 ? 1 : -1;
+          }
+        } else if (this.state === 'move') {
+          this.state = 'idle';
+        }
+      }
+
+      handleCpuAi(dt, opponent) {
+        if (this.state === 'hurt' || this.state === 'ultimate') return;
+
+        this.aiDecisionTimer -= dt;
+        const dx = opponent.x - this.x;
+        const dy = opponent.y - this.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (this.aiDecisionTimer <= 0) {
+          this.aiDecisionTimer = 0.28 + Math.random() * 0.35;
+          this.aiHoldCharge = false;
+          this.aiHoldGuard = false;
+
+          // 形態変化の判断（HPや気力・スキルストックに応じて変身）
+          if (this.data.forms.length > 1 && this.skillStock >= 1 && Math.random() < 0.26) {
+            const nextIdx = Math.min(this.data.forms.length - 1, this.formIndex + 1);
+            if (nextIdx > this.formIndex) {
+              this.transformTo(nextIdx);
+              return;
+            }
+          }
+
+          // アルティメットブラスト判断
+          if ((this.isSparking || (this.ki >= 85 && this.skillStock >= 2)) && dist < 340 && Math.random() < 0.32) {
+            this.useUltimateBlast(opponent);
+            return;
+          }
+
+          // ブラスト2判断
+          if (this.ki >= 45 && dist < 360 && Math.random() < 0.24) {
+            this.useBlast2(opponent);
+            return;
+          }
+
+          // ブラスト1判断
+          if (this.ki < 30 && this.skillStock >= 1 && Math.random() < 0.3) {
+            this.useBlast1();
+            return;
+          }
+
+          // 気溜め判断
+          if (this.ki < 35 && dist > 150 && Math.random() < 0.45) {
+            this.aiHoldCharge = true;
+            return;
+          }
+
+          // 接近または距離調整
+          if (dist > 85) {
+            this.aiMoveDir = dx > 0 ? 1 : -1;
+            this.aiVertDir = dy < -20 ? -0.7 : (dy > 20 ? 0.7 : (Math.random() - 0.5));
+            if (dist > 220 && this.ki >= 20 && Math.random() < 0.35) {
+              this.startDragonDash(dx, dy);
+            } else if (Math.random() < 0.3) {
+              this.fireKiBlast(opponent);
+            }
+          } else {
+            this.aiMoveDir = dx > 0 ? 1 : -1;
+            this.aiVertDir = (Math.random() - 0.5) * 0.8;
+            if (Math.random() < 0.65) {
+              this.startRushAttack(opponent);
+            } else if (Math.random() < 0.35) {
+              this.aiHoldGuard = true;
+            }
+          }
+        }
+
+        if (this.aiHoldCharge) {
+          this.state = 'charge';
+          this.addKi(18 * dt);
+          this.addSp(11 * dt);
+          if (this.ki >= 85) this.aiHoldCharge = false;
+          return;
+        }
+
+        if (this.aiHoldGuard) {
+          this.state = 'guard';
+          this.stateTimer = 0.12;
+          if (dx !== 0) this.facing = dx > 0 ? 1 : -1;
+          return;
+        }
+
+        if (this.state === 'idle' || this.state === 'move') {
+          const spd = 215 * this.form.speedMult;
+          this.vx += (this.aiMoveDir * spd - this.vx) * Math.min(1, dt * 12);
+          this.vy += (this.aiVertDir * spd * 0.7 - this.vy) * Math.min(1, dt * 12);
+          if (dx !== 0) this.facing = dx > 0 ? 1 : -1;
+        }
+      }
+
+      // ------------------------------------------------------------------------
+      // 精密2Dベクター/Canvas描画（髪型・服装・オーラ・超サイヤ人演出）
+      // ------------------------------------------------------------------------
+      draw(ctx) {
+        const f = this.form;
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        // 地面の影
+        ctx.save();
+        ctx.translate(0, 32);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 26, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // オーラ描画（気溜め・SPARKING・変身形態に応じて膨張）
+        const chargingOrSparking = this.state === 'charge' || this.isSparking || this.formIndex > 0;
+        if (chargingOrSparking) {
+          const pulse = Math.sin(this.animTime * 18) * 6 + (this.state === 'charge' ? 12 : 4) + (this.isSparking ? 14 : 0);
+          const auraW = 34 + pulse;
+          const auraH = 52 + pulse * 1.2;
+
+          ctx.save();
+          const grad = ctx.createRadialGradient(0, -4, 6, 0, -4, Math.max(auraW, auraH));
+          grad.addColorStop(0, f.auraCore);
+          grad.addColorStop(0.55, f.auraColor);
+          grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.ellipse(0, -4, auraW, auraH, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 超サイヤ人2/3/SPARKINGのスパーク稲妻
+          if (f.lightning || this.isSparking) {
+            ctx.strokeStyle = '#fef08a';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 3; i++) {
+              const a = this.animTime * 22 + i * 2.1;
+              const sx = Math.cos(a) * (auraW * 0.9);
+              const sy = Math.sin(a) * (auraH * 0.75) - 6;
+              ctx.beginPath();
+              ctx.moveTo(sx, sy);
+              ctx.lineTo(sx + (Math.random() - 0.5) * 24, sy + (Math.random() - 0.5) * 24);
+              ctx.lineTo(sx + (Math.random() - 0.5) * 28, sy + (Math.random() - 0.5) * 28);
+              ctx.stroke();
+            }
+          }
+          ctx.restore();
+        }
+
+        // キャラクターの向き反転
+        ctx.scale(this.facing, 1);
+
+        // 無敵点滅
+        if (this.invulnTimer > 0 && Math.floor(this.animTime * 24) % 2 === 0) {
+          ctx.globalAlpha = 0.65;
+        }
+
+        const bob = Math.sin(this.animTime * 8) * 2.2;
+        const lean = this.state === 'dash' ? 0.28 : (this.state === 'attack' ? 0.2 : (this.state === 'hurt' ? -0.25 : 0));
+        ctx.translate(0, bob);
+        ctx.rotate(lean);
+
+        // 脚部
+        this.drawLegs(ctx, f);
+
+        // 胴体・道着/戦闘服/衣装
+        this.drawTorso(ctx, f);
+
+        // 腕部・攻撃ポーズ
+        this.drawArms(ctx, f);
+
+        // 頭部・髪型・特徴的パーツ（バンダナ・ツインテール等）
+        this.drawHeadAndHair(ctx, f);
+
+        // ガードシールド表示
+        if (this.state === 'guard') {
+          ctx.save();
+          ctx.strokeStyle = '#38bdf8';
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(14, -4, 30, -Math.PI * 0.45, Math.PI * 0.45);
+          ctx.stroke();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        ctx.restore();
+      }
+
+      drawLegs(ctx, f) {
+        const stride = this.state === 'move' || this.state === 'dash' ? Math.sin(this.animTime * 18) * 9 : 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        if (this.charId === 'frieza') {
+          ctx.fillStyle = f.bodyColor || '#f3e8ff';
+          ctx.strokeStyle = '#1e1b4b';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(-6 + stride * 0.5, 18, 6, 11, 0.1, 0, Math.PI * 2);
+          ctx.ellipse(6 - stride * 0.5, 18, 6, 11, -0.1, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          return;
+        }
+
+        const legColor = f.furRed ? '#dc2626' : (f.suitColor || f.giColor || '#ea580c');
+        const bootColor = f.furRed ? '#facc15' : '#1e293b';
+
+        // 後ろ脚
+        ctx.strokeStyle = '#090d1a';
+        ctx.lineWidth = 9;
+        ctx.beginPath();
+        ctx.moveTo(-4, 10);
+        ctx.lineTo(-6 - stride, 26);
+        ctx.stroke();
+
+        ctx.strokeStyle = legColor;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(-4, 10);
+        ctx.lineTo(-6 - stride, 26);
+        ctx.stroke();
+
+        // 前脚
+        ctx.strokeStyle = '#090d1a';
+        ctx.lineWidth = 9;
+        ctx.beginPath();
+        ctx.moveTo(4, 10);
+        ctx.lineTo(7 + stride, 26);
+        ctx.stroke();
+
+        ctx.strokeStyle = legColor;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(4, 10);
+        ctx.lineTo(7 + stride, 26);
+        ctx.stroke();
+
+        // ブーツ
+        ctx.fillStyle = bootColor;
+        ctx.fillRect(-11 - stride, 24, 11, 6);
+        ctx.fillRect(2 + stride, 24, 12, 6);
+      }
+
+      drawTorso(ctx, f) {
+        ctx.save();
+        if (this.charId === 'goku') {
+          if (f.furRed) {
+            // 超サイヤ人4の赤い体毛胴体
+            ctx.fillStyle = '#dc2626';
+            ctx.strokeStyle = '#090d1a';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.roundRect(-12, -8, 24, 22, 7);
+            ctx.fill();
+            ctx.stroke();
+          } else {
+            // 道着
+            ctx.fillStyle = f.giColor || '#ea580c';
+            ctx.strokeStyle = '#090d1a';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.roundRect(-13, -9, 26, 22, 6);
+            ctx.fill();
+            ctx.stroke();
+            // 帯
+            ctx.fillStyle = f.obiColor || '#1d4ed8';
+            ctx.fillRect(-12, 7, 24, 5);
+          }
+        } else if (this.charId === 'vegeta') {
+          if (f.furRed) {
+            ctx.fillStyle = '#dc2626';
+            ctx.strokeStyle = '#090d1a';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.roundRect(-13, -9, 26, 23, 7);
+            ctx.fill();
+            ctx.stroke();
+          } else {
+            ctx.fillStyle = f.suitColor || '#1e3a8a';
+            ctx.strokeStyle = '#090d1a';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.roundRect(-13, -9, 26, 22, 6);
+            ctx.fill();
+            ctx.stroke();
+            // 戦闘服チェストプレート
+            ctx.fillStyle = f.armorColor || '#f8fafc';
+            ctx.beginPath();
+            ctx.roundRect(-10, -8, 20, 12, 4);
+            ctx.fill();
+            ctx.stroke();
+          }
+        } else if (this.charId === 'pan') {
+          // 青いシャツ＋赤いベスト
+          ctx.fillStyle = f.shirtColor || '#2563eb';
+          ctx.strokeStyle = '#090d1a';
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          ctx.roundRect(-11, -8, 22, 20, 5);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = f.vestColor || '#dc2626';
+          ctx.beginPath();
+          ctx.roundRect(-11, -8, 22, 14, 4);
+          ctx.fill();
+          ctx.stroke();
+        } else if (this.charId === 'videl') {
+          // 紫系武道着トップス
+          ctx.fillStyle = f.outfitTop || '#7e22ce';
+          ctx.strokeStyle = '#090d1a';
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          ctx.roundRect(-11, -8, 22, 20, 6);
+          ctx.fill();
+          ctx.stroke();
+        } else if (this.charId === 'frieza') {
+          ctx.fillStyle = f.bodyColor || '#f3e8ff';
+          ctx.strokeStyle = '#1e1b4b';
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          ctx.roundRect(-11, -8, 22, 21, 7);
+          ctx.fill();
+          ctx.stroke();
+          // バイオアーマー胸部分
+          ctx.fillStyle = f.bioArmor || '#9333ea';
+          ctx.beginPath();
+          ctx.roundRect(-8, -7, 16, 11, 4);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      drawArms(ctx, f) {
+        const punching = this.state === 'attack' || this.state === 'blast' || this.state === 'ultimate' || this.state === 'counter';
+        const reachX = punching ? 26 : 12;
+        const reachY = this.state === 'charge' ? -16 : (punching ? -4 : 3);
+
+        ctx.save();
+        ctx.strokeStyle = '#090d1a';
+        ctx.lineWidth = 8;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(6, -5);
+        ctx.lineTo(reachX, reachY);
+        ctx.stroke();
+
+        const armColor = this.charId === 'frieza' ? (f.bodyColor || '#f3e8ff') : (f.furRed ? '#dc2626' : '#fcd34d');
+        ctx.strokeStyle = armColor;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(6, -5);
+        ctx.lineTo(reachX, reachY);
+        ctx.stroke();
+
+        // 拳・リストバンド
+        ctx.fillStyle = this.charId === 'goku' && !f.furRed ? '#f59e0b' : '#ffffff';
+        ctx.beginPath();
+        ctx.arc(reachX, reachY, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      drawHeadAndHair(ctx, f) {
+        ctx.save();
+        ctx.translate(0, -18);
+
+        if (this.charId === 'frieza') {
+          // フリーザの頭部・角
+          ctx.fillStyle = f.bodyColor || '#f3e8ff';
+          ctx.strokeStyle = '#1e1b4b';
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 12, 11, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = f.bioArmor || '#9333ea';
+          ctx.beginPath();
+          ctx.moveTo(-4, -9);
+          ctx.lineTo(-14, -20);
+          ctx.lineTo(2, -10);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          // 目
+          ctx.fillStyle = '#dc2626';
+          ctx.beginPath();
+          ctx.ellipse(6, -1, 3, 2, -0.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          return;
+        }
+
+        // 顔ベース
+        ctx.fillStyle = '#fde68a';
+        ctx.strokeStyle = '#090d1a';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 11, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // 目・鋭い眼差し
+        ctx.fillStyle = '#090d1a';
+        ctx.beginPath();
+        ctx.arc(6, -1, 2.1, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 髪型・特徴的スタイル
+        ctx.fillStyle = f.hairColor;
+        ctx.strokeStyle = '#090d1a';
+        ctx.lineWidth = 2;
+
+        if (f.hairStyle === 'pan_gt') {
+          // パン（GT）：ショートヘア＋黄色バンダナ
+          ctx.beginPath();
+          ctx.arc(0, -2, 12, Math.PI * 0.95, Math.PI * 2.05);
+          ctx.lineTo(11, 4);
+          ctx.lineTo(6, 1);
+          ctx.lineTo(0, 4);
+          ctx.lineTo(-8, 2);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          // バンダナ
+          ctx.fillStyle = f.bandanaColor || '#facc15';
+          ctx.fillRect(-11, -9, 22, 4.5);
+          ctx.strokeRect(-11, -9, 22, 4.5);
+          // バンダナの結び目
+          ctx.beginPath();
+          ctx.moveTo(-11, -7);
+          ctx.lineTo(-20, -11);
+          ctx.lineTo(-18, -4);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        } else if (f.hairStyle === 'videl_z') {
+          // ビーデル（Z）：特徴的なツインテール
+          ctx.beginPath();
+          ctx.arc(0, -2, 11.5, Math.PI * 0.95, Math.PI * 2.05);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          // ツインテール（後ろ＆前揺れ）
+          const tailWave = Math.sin(this.animTime * 10) * 3;
+          ctx.beginPath();
+          ctx.moveTo(-9, -6);
+          ctx.quadraticCurveTo(-22, -10 + tailWave, -24, 6 + tailWave);
+          ctx.quadraticCurveTo(-15, 2, -9, -2);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        } else if (f.hairStyle === 'ssj3_long') {
+          // 超サイヤ人3：腰まで伸びる黄金の長髪＋眉なし鋭顔
+          ctx.fillStyle = '#fde68a';
+          ctx.fillRect(2, -5, 8, 2.5); // 眉稜線
+
+          ctx.fillStyle = f.hairColor;
+          ctx.beginPath();
+          ctx.moveTo(-12, -2);
+          ctx.lineTo(-22, 26);
+          ctx.lineTo(-10, 22);
+          ctx.lineTo(-6, 6);
+          ctx.lineTo(4, -14);
+          ctx.lineTo(14, -6);
+          ctx.lineTo(8, -11);
+          ctx.lineTo(0, -16);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        } else if (f.hairStyle === 'ssj4_wild') {
+          // 超サイヤ人4：野生的な逆立ち髪＋赤み
+          ctx.beginPath();
+          ctx.moveTo(-12, -2);
+          ctx.lineTo(-22, 14);
+          ctx.lineTo(-12, 10);
+          ctx.lineTo(-16, -12);
+          ctx.lineTo(-4, -22);
+          ctx.lineTo(4, -15);
+          ctx.lineTo(13, -21);
+          ctx.lineTo(12, -6);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        } else if (f.hairStyle === 'vegeta_base' || f.hairStyle === 'vegeta_ssj' || f.hairStyle === 'vegeta_ssj2') {
+          // ベジータ特有の逆立ちM字/鋭角ヘア
+          const spikes = f.hairStyle === 'vegeta_base' ? 12 : 17;
+          ctx.beginPath();
+          ctx.moveTo(-11, -3);
+          ctx.lineTo(-16, -12 - spikes * 0.4);
+          ctx.lineTo(-6, -11);
+          ctx.lineTo(-3, -12 - spikes);
+          ctx.lineTo(4, -11);
+          ctx.lineTo(11, -12 - spikes * 0.8);
+          ctx.lineTo(12, -3);
+          ctx.lineTo(6, -6);
+          ctx.lineTo(0, -4);
+          ctx.lineTo(-6, -6);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        } else {
+          // 悟空（ノーマル/ゴッド/超サイヤ人1/2/ブルー）の逆立ち髪
+          const lift = f.hairStyle === 'goku_base' ? 0 : (f.hairStyle === 'ssj2_spiky' ? 9 : 6);
+          ctx.beginPath();
+          ctx.moveTo(-11, -2);
+          ctx.lineTo(-16, -9 - lift * 0.6);
+          ctx.lineTo(-7, -9);
+          ctx.lineTo(-2, -13 - lift);
+          ctx.lineTo(5, -10);
+          ctx.lineTo(14, -12 - lift * 0.7);
+          ctx.lineTo(11, -2);
+          ctx.lineTo(5, -5);
+          ctx.lineTo(-1, -3);
+          ctx.lineTo(-7, -5);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // 5. エフェクト・ビーム・気弾・HUD・UI制御
+    // --------------------------------------------------------------------------
+    let p1Fighter = null;
+    let p2Fighter = null;
+
+    function spawnBurstParticles(x, y, color, count = 16, maxSpeed = 220) {
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 40 + Math.random() * maxSpeed;
+        gameState.particles.push({
+          x,
+          y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          size: 2.5 + Math.random() * 4.5,
+          color,
+          life: 0.28 + Math.random() * 0.35,
+          maxLife: 0.6
+        });
+      }
+    }
+
+    function spawnShockwave(x, y, color, maxRadius = 110) {
+      gameState.shockwaves.push({
+        x,
+        y,
+        radius: 10,
+        maxRadius,
+        color,
+        life: 0.34,
+        maxLife: 0.34
+      });
+    }
+
+    function addFloatingText(x, y, text, color = '#ffffff') {
+      gameState.floatingTexts.push({
+        x,
+        y,
+        text,
+        color,
+        life: 0.75,
+        vy: -55
+      });
+    }
+
+    function triggerShake(duration, magnitude) {
+      gameState.shakeTimer = Math.max(gameState.shakeTimer, duration);
+      gameState.shakeMagnitude = Math.max(gameState.shakeMagnitude, magnitude);
+    }
+
+    function triggerFlash(color, alpha = 0.4) {
+      gameState.screenFlashColor = color;
+      gameState.screenFlashAlpha = alpha;
+    }
+
+    function triggerDarkness(alpha = 0.55) {
+      gameState.darknessAlpha = Math.max(gameState.darknessAlpha, alpha);
+    }
+
+    let dialogueTimeout = null;
+    function showDialogue(speaker, text) {
+      const box = document.getElementById('dialogue-box');
+      const spEl = document.getElementById('dialogue-speaker');
+      const txEl = document.getElementById('dialogue-text');
+      if (!box || !spEl || !txEl) return;
+      spEl.textContent = speaker + ':';
+      txEl.textContent = text;
+      box.classList.remove('hidden');
+      if (dialogueTimeout) clearTimeout(dialogueTimeout);
+      dialogueTimeout = setTimeout(() => {
+        box.classList.add('hidden');
+      }, 2800);
+    }
+
+    let cutinTimeout = null;
+    function showCutin(title, sub, quote, accentColor) {
+      const layer = document.getElementById('cutin-layer');
+      const banner = document.getElementById('cutin-banner');
+      const tEl = document.getElementById('cutin-title');
+      const sEl = document.getElementById('cutin-sub');
+      const qEl = document.getElementById('cutin-quote');
+      if (!layer || !banner) return;
+
+      tEl.textContent = title;
+      sEl.textContent = sub;
+      qEl.textContent = quote;
+      banner.style.borderColor = accentColor || '#ffffff';
+
+      layer.classList.remove('hidden');
+      // アニメーション再トリガー
+      banner.classList.remove('animate-cutin');
+      void banner.offsetWidth;
+      banner.classList.add('animate-cutin');
+
+      if (cutinTimeout) clearTimeout(cutinTimeout);
+      cutinTimeout = setTimeout(() => {
+        layer.classList.add('hidden');
+      }, 1350);
+    }
+
+    function updateHud() {
+      if (!p1Fighter || !p2Fighter) return;
+      const p1HpPct = Math.max(0, (p1Fighter.hp / p1Fighter.maxHp) * 100);
+      const p2HpPct = Math.max(0, (p2Fighter.hp / p2Fighter.maxHp) * 100);
+      const p1KiPct = Math.max(0, (p1Fighter.ki / p1Fighter.maxKi) * 100);
+      const p2KiPct = Math.max(0, (p2Fighter.ki / p2Fighter.maxKi) * 100);
+      const p1SpPct = p1Fighter.isSparking
+        ? (p1Fighter.sparkingTimer / p1Fighter.sparkingDuration) * 100
+        : (p1Fighter.spGauge / p1Fighter.maxSp) * 100;
+      const p2SpPct = p2Fighter.isSparking
+        ? (p2Fighter.sparkingTimer / p2Fighter.sparkingDuration) * 100
+        : (p2Fighter.spGauge / p2Fighter.maxSp) * 100;
+
+      document.getElementById('p1-hp-bar').style.width = `${p1HpPct}%`;
+      document.getElementById('p2-hp-bar').style.width = `${p2HpPct}%`;
+      document.getElementById('p1-ki-bar').style.width = `${p1KiPct}%`;
+      document.getElementById('p2-ki-bar').style.width = `${p2KiPct}%`;
+      document.getElementById('p1-sp-bar').style.width = `${p1SpPct}%`;
+      document.getElementById('p2-sp-bar').style.width = `${p2SpPct}%`;
+
+      document.getElementById('p1-name-label').textContent = p1Fighter.name;
+      document.getElementById('p2-name-label').textContent = p2Fighter.name;
+      document.getElementById('p1-form-badge').textContent = p1Fighter.form.label;
+      document.getElementById('p2-form-badge').textContent = p2Fighter.form.label;
+
+      document.getElementById('p1-stocks').textContent = '◆'.repeat(p1Fighter.skillStock) + '◇'.repeat(Math.max(0, p1Fighter.maxSkillStock - p1Fighter.skillStock));
+      document.getElementById('p2-stocks').textContent = '◆'.repeat(p2Fighter.skillStock) + '◇'.repeat(Math.max(0, p2Fighter.maxSkillStock - p2Fighter.skillStock));
+
+      const p1SpText = document.getElementById('p1-sp-text');
+      if (p1Fighter.isSparking) {
+        p1SpText.textContent = 'SPARKING!';
+        p1SpText.className = 'text-yellow-300 font-black animate-pulse';
+        document.getElementById('p1-sp-bar').parentElement.classList.add('sparking-active-ui');
+      } else {
+        p1SpText.textContent = 'SP';
+        p1SpText.className = 'text-amber-300 font-black';
+        document.getElementById('p1-sp-bar').parentElement.classList.remove('sparking-active-ui');
+      }
+
+      document.getElementById('timer-display').textContent = Math.max(0, Math.ceil(gameState.timer));
+    }
+
+    // --------------------------------------------------------------------------
+    // 6. キャラクター選択画面・バトル開始・終了処理
+    // --------------------------------------------------------------------------
+    function renderSelectorUi() {
+      const p1Roster = document.getElementById('p1-roster');
+      const p2Roster = document.getElementById('p2-roster');
+      const stageSel = document.getElementById('stage-selector');
+      p1Roster.innerHTML = '';
+      p2Roster.innerHTML = '';
+      stageSel.innerHTML = '';
+
+      const keys = Object.keys(ROSTER_DATA);
+      keys.forEach((key) => {
+        const d = ROSTER_DATA[key];
+
+        // P1ボタン
+        const b1 = document.createElement('button');
+        b1.type = 'button';
+        const active1 = gameState.p1Id === key;
+        b1.className = `py-2 px-1 rounded-lg text-[10px] font-black border text-center cursor-pointer transition ${
+          active1
+            ? 'bg-gradient-to-b from-amber-400 to-orange-500 text-slate-950 border-white scale-[1.03] shadow-md'
+            : 'bg-slate-800/90 text-slate-200 border-white/15 hover:border-amber-300/60'
+        }`;
+        b1.textContent = d.name.split(' ')[0];
+        b1.addEventListener('click', () => {
+          sound.unlock();
+          sound.playGuard();
+          gameState.p1Id = key;
+          renderSelectorUi();
+        });
+        p1Roster.appendChild(b1);
+
+        // P2ボタン
+        const b2 = document.createElement('button');
+        b2.type = 'button';
+        const active2 = gameState.p2Id === key;
+        b2.className = `py-2 px-1 rounded-lg text-[10px] font-black border text-center cursor-pointer transition ${
+          active2
+            ? 'bg-gradient-to-b from-rose-500 to-red-600 text-white border-white scale-[1.03] shadow-md'
+            : 'bg-slate-800/90 text-slate-200 border-white/15 hover:border-rose-300/60'
+        }`;
+        b2.textContent = d.name.split(' ')[0];
+        b2.addEventListener('click', () => {
+          sound.unlock();
+          sound.playGuard();
+          gameState.p2Id = key;
+          renderSelectorUi();
+        });
+        p2Roster.appendChild(b2);
+      });
+
+      STAGES_DATA.forEach((st) => {
+        const sb = document.createElement('button');
+        sb.type = 'button';
+        const activeS = gameState.stageId === st.id;
+        sb.className = `py-1.5 px-1.5 rounded-lg text-[10px] font-black border truncate cursor-pointer ${
+          activeS
+            ? 'bg-cyan-500 text-slate-950 border-white'
+            : 'bg-slate-800/90 text-slate-300 border-white/15 hover:border-cyan-400/50'
+        }`;
+        sb.textContent = st.name;
+        sb.addEventListener('click', () => {
+          sound.unlock();
+          gameState.stageId = st.id;
+          renderSelectorUi();
+        });
+        stageSel.appendChild(sb);
+      });
+
+      const p1Info = ROSTER_DATA[gameState.p1Id];
+      const p2Info = ROSTER_DATA[gameState.p2Id];
+      document.getElementById('sel-p1-name').textContent = p1Info.name;
+      document.getElementById('sel-p1-role').textContent = p1Info.roleTag;
+      document.getElementById('sel-p1-desc').textContent = p1Info.shortDesc;
+
+      document.getElementById('sel-p2-name').textContent = p2Info.name;
+      document.getElementById('sel-p2-desc').textContent = p2Info.shortDesc;
+
+      const stObj = STAGES_DATA.find((s) => s.id === gameState.stageId) || STAGES_DATA[0];
+      document.getElementById('stage-badge').textContent = stObj.name;
+    }
+
+    function startBattle() {
+      sound.unlock();
+      sound.stopChargeHum();
+      gameState.phase = 'battle';
+      gameState.timer = 99;
+      gameState.hitstop = 0;
+      gameState.shakeTimer = 0;
+      gameState.screenFlashAlpha = 0;
+      gameState.darknessAlpha = 0;
+      gameState.particles = [];
+      gameState.projectiles = [];
+      gameState.beams = [];
+      gameState.shockwaves = [];
+      gameState.floatingTexts = [];
+      gameState.stats = { maxCombo: 0, transforms: 0, dmgDealt: 0 };
+
+      const bounds = getArenaBounds();
+      p1Fighter = new Fighter(gameState.p1Id, true, bounds.left + 65, bounds.floorY - 40, 1);
+      p2Fighter = new Fighter(gameState.p2Id, false, bounds.right - 65, bounds.floorY - 40, -1);
+
+      document.getElementById('select-screen').classList.add('hidden');
+      document.getElementById('result-screen').classList.add('hidden');
+      document.getElementById('battle-hud').classList.remove('hidden');
+      document.getElementById('touch-controls').classList.remove('hidden');
+
+      updateHud();
+      showDialogue(p1Fighter.name, p1Fighter.data.introQuote);
+      sound.playTransform(false);
+      sound.startBgm();
+    }
+
+    function finishBattle(playerWon) {
+      if (gameState.phase === 'result') return;
+      gameState.phase = 'result';
+      sound.stopChargeHum();
+      sound.stopBgm();
+
+      document.getElementById('touch-controls').classList.add('hidden');
+      document.getElementById('result-screen').classList.remove('hidden');
+
+      const titleEl = document.getElementById('result-title');
+      const badgeEl = document.getElementById('result-badge');
+      const quoteEl = document.getElementById('result-quote');
+
+      if (playerWon) {
+        badgeEl.textContent = 'VICTORY';
+        badgeEl.className = 'inline-block px-3 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase bg-amber-400 text-slate-950 mb-1';
+        titleEl.textContent = 'YOU WIN!';
+        titleEl.className = 'text-2xl font-black text-amber-300 text-stroke-dark mb-1';
+        quoteEl.textContent = p1Fighter.data.winQuote;
+      } else {
+        badgeEl.textContent = 'DEFEAT';
+        badgeEl.className = 'inline-block px-3 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase bg-rose-500 text-white mb-1';
+        titleEl.textContent = 'YOU LOSE...';
+        titleEl.className = 'text-2xl font-black text-rose-400 text-stroke-dark mb-1';
+        quoteEl.textContent = p2Fighter.data.winQuote;
+      }
+
+      document.getElementById('stat-max-combo').textContent = gameState.stats.maxCombo;
+      document.getElementById('stat-transforms').textContent = gameState.stats.transforms;
+      document.getElementById('stat-dmg-dealt').textContent = gameState.stats.dmgDealt;
+      document.getElementById('stat-rem-hp').textContent = `${Math.max(0, Math.round((p1Fighter.hp / p1Fighter.maxHp) * 100))}%`;
+    }
+
+    // --------------------------------------------------------------------------
+    // 7. キャンバス描画・物理更新ループ（9:16 レスポンシブ）
+    // --------------------------------------------------------------------------
+    const canvas = document.getElementById('game-canvas');
+    const ctx = canvas.getContext('2d');
+    let logicalWidth = 450;
+    let logicalHeight = 800;
+
+    function resizeCanvas() {
+      const frame = document.getElementById('game-frame');
+      const rect = frame.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      logicalWidth = Math.max(270, rect.width);
+      logicalHeight = Math.max(480, rect.height);
+      canvas.width = Math.floor(logicalWidth * dpr);
+      canvas.height = Math.floor(logicalHeight * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function getArenaBounds() {
+      return {
+        left: 34,
+        right: logicalWidth - 34,
+        ceilingY: logicalHeight * 0.24,
+        floorY: logicalHeight * 0.66
+      };
+    }
+
+    function updateProjectilesAndBeams(dt) {
+      // 気弾・大型気弾更新と衝突（気弾同士の相殺・撃ち合い含む）
+      for (let i = gameState.projectiles.length - 1; i >= 0; i--) {
+        const p = gameState.projectiles[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.life -= dt;
+
+        // 気弾同士の撃ち合い・相殺
+        let cancelled = false;
+        for (let j = i - 1; j >= 0; j--) {
+          const other = gameState.projectiles[j];
+          if (other.owner !== p.owner) {
+            const d = Math.hypot(p.x - other.x, p.y - other.y);
+            if (d < p.radius + other.radius + 6) {
+              spawnShockwave((p.x + other.x) * 0.5, (p.y + other.y) * 0.5, '#38bdf8', 65);
+              spawnBurstParticles((p.x + other.x) * 0.5, (p.y + other.y) * 0.5, '#ffffff', 14, 180);
+              addFloatingText((p.x + other.x) * 0.5, (p.y + other.y) * 0.5 - 16, '気弾衝突！', '#7dd3fc');
+              sound.playHit(false);
+              gameState.projectiles.splice(i, 1);
+              gameState.projectiles.splice(j, 1);
+              i--;
+              cancelled = true;
+              break;
+            }
+          }
+        }
+        if (cancelled) continue;
+
+        const target = p.owner === p1Fighter ? p2Fighter : p1Fighter;
+        if (target && target.state !== 'ko') {
+          const dist = Math.hypot(p.x - target.x, p.y - target.y);
+          if (dist < p.radius + target.radius) {
+            target.takeDamage(p.damage, Math.sign(p.vx) * (p.isBigOrb ? 360 : 120), p.isBigOrb ? -140 : -20, !!p.isBigOrb, p.owner);
+            gameState.projectiles.splice(i, 1);
+            continue;
+          }
+        }
+
+        if (p.life <= 0 || p.x < -50 || p.x > logicalWidth + 50 || p.y < 0 || p.y > logicalHeight) {
+          gameState.projectiles.splice(i, 1);
+        }
+      }
+
+      // ビーム（かめはめ波・ギャリック砲・アルティメットブラスト）更新
+      for (let i = gameState.beams.length - 1; i >= 0; i--) {
+        const b = gameState.beams[i];
+        b.x = b.owner.x + b.dir * 26;
+        b.y = b.owner.y - 4;
+        b.life -= dt;
+        b.tickTimer += dt;
+
+        // ビーム同士の撃ち合い演出
+        for (let j = i - 1; j >= 0; j--) {
+          const otherB = gameState.beams[j];
+          if (otherB.owner !== b.owner && Math.abs(otherB.y - b.y) < (otherB.width + b.width) * 0.6) {
+            const clashX = (b.x + otherB.x) * 0.5 + b.dir * 90;
+            spawnShockwave(clashX, b.y, '#facc15', 110);
+            spawnBurstParticles(clashX, b.y, '#ffffff', 20, 240);
+            addFloatingText(clashX, b.y - 26, 'ビーム撃ち合い！！', '#fde047');
+            triggerShake(0.2, 9);
+            sound.playHit(true);
+          }
+        }
+
+        const target = b.owner === p1Fighter ? p2Fighter : p1Fighter;
+        if (target && target.state !== 'ko' && b.tickTimer >= 0.11 && b.hitCount < b.maxHits) {
+          b.tickTimer = 0;
+          const minX = b.dir > 0 ? b.x : b.x - b.length;
+          const maxX = b.dir > 0 ? b.x + b.length : b.x;
+          if (target.x >= minX - 24 && target.x <= maxX + 24 && Math.abs(target.y - b.y) < b.width * 0.75 + 24) {
+            b.hitCount++;
+            target.takeDamage(b.damagePerTick, b.dir * (b.isUltimate ? 480 : 210), b.isUltimate ? -160 : -40, b.isUltimate, b.owner);
+          }
+        }
+
+        if (b.life <= 0) {
+          gameState.beams.splice(i, 1);
+        }
+      }
+
+      // パーティクル
+      for (let i = gameState.particles.length - 1; i >= 0; i--) {
+        const pt = gameState.particles[i];
+        pt.x += pt.vx * dt;
+        pt.y += pt.vy * dt;
+        pt.life -= dt;
+        if (pt.life <= 0) gameState.particles.splice(i, 1);
+      }
+
+      // 衝撃波リング
+      for (let i = gameState.shockwaves.length - 1; i >= 0; i--) {
+        const sw = gameState.shockwaves[i];
+        sw.life -= dt;
+        const progress = 1 - Math.max(0, sw.life / sw.maxLife);
+        sw.radius = 10 + (sw.maxRadius - 10) * progress;
+        if (sw.life <= 0) gameState.shockwaves.splice(i, 1);
+      }
+
+      // フローティングテキスト
+      for (let i = gameState.floatingTexts.length - 1; i >= 0; i--) {
+        const ft = gameState.floatingTexts[i];
+        ft.y += ft.vy * dt;
+        ft.life -= dt;
+        if (ft.life <= 0) gameState.floatingTexts.splice(i, 1);
+      }
+    }
+
+    function drawBackground(ctx) {
+      const st = STAGES_DATA.find((s) => s.id === gameState.stageId) || STAGES_DATA[0];
+      const bounds = getArenaBounds();
+
+      const skyGrad = ctx.createLinearGradient(0, 0, 0, bounds.floorY + 26);
+      skyGrad.addColorStop(0, st.skyTop);
+      skyGrad.addColorStop(0.55, st.skyMid);
+      skyGrad.addColorStop(1, st.skyBot);
+      ctx.fillStyle = skyGrad;
+      ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+
+      // 遠景の山並み・岩肌シルエット
+      ctx.fillStyle = 'rgba(10, 15, 30, 0.38)';
+      ctx.beginPath();
+      ctx.moveTo(0, bounds.floorY + 26);
+      ctx.lineTo(0, bounds.floorY - 45);
+      ctx.lineTo(logicalWidth * 0.22, bounds.floorY - 95);
+      ctx.lineTo(logicalWidth * 0.45, bounds.floorY - 35);
+      ctx.lineTo(logicalWidth * 0.72, bounds.floorY - 110);
+      ctx.lineTo(logicalWidth, bounds.floorY - 40);
+      ctx.lineTo(logicalWidth, bounds.floorY + 26);
+      ctx.closePath();
+      ctx.fill();
+
+      // グランド・大地
+      const gndGrad = ctx.createLinearGradient(0, bounds.floorY + 24, 0, logicalHeight);
+      gndGrad.addColorStop(0, st.groundTop);
+      gndGrad.addColorStop(1, st.groundBot);
+      ctx.fillStyle = gndGrad;
+      ctx.fillRect(0, bounds.floorY + 24, logicalWidth, logicalHeight - (bounds.floorY + 24));
+
+      // 地面ライン
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, bounds.floorY + 24);
+      ctx.lineTo(logicalWidth, bounds.floorY + 24);
+      ctx.stroke();
+    }
+
+    function drawEffects(ctx) {
+      // 衝撃波リング
+      gameState.shockwaves.forEach((sw) => {
+        const alpha = Math.max(0, sw.life / sw.maxLife);
+        ctx.save();
+        ctx.strokeStyle = sw.color;
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = 4 * alpha + 1.5;
+        ctx.beginPath();
+        ctx.ellipse(sw.x, sw.y, sw.radius, sw.radius * 0.45, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // 気弾・大型気弾
+      gameState.projectiles.forEach((p) => {
+        ctx.save();
+        const grad = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, p.radius * 1.4);
+        grad.addColorStop(0, p.coreColor);
+        grad.addColorStop(0.55, p.color);
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius * 1.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
+      // ビーム・アルティメットブラスト
+      gameState.beams.forEach((b) => {
+        const ratio = Math.max(0, b.life / b.maxLife);
+        const w = b.width * (0.65 + 0.35 * Math.sin(performance.now() * 0.04)) * Math.min(1, ratio * 2.2);
+        const startX = b.x;
+        const endX = b.x + b.dir * b.length;
+
+        ctx.save();
+        // 外側オーラビーム
+        ctx.strokeStyle = b.color;
+        ctx.globalAlpha = 0.78 * ratio;
+        ctx.lineWidth = w;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(startX, b.y);
+        ctx.lineTo(endX, b.y);
+        ctx.stroke();
+
+        // 中心超高輝度コア
+        ctx.strokeStyle = '#ffffff';
+        ctx.globalAlpha = 0.95 * ratio;
+        ctx.lineWidth = w * 0.42;
+        ctx.beginPath();
+        ctx.moveTo(startX, b.y);
+        ctx.lineTo(endX, b.y);
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // パーティクル
+      gameState.particles.forEach((pt) => {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
+        ctx.fillStyle = pt.color;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
+      // フローティングテキスト
+      gameState.floatingTexts.forEach((ft) => {
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, ft.life * 1.6);
+        ctx.font = '900 14px "Noto Sans JP", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#05070e';
+        ctx.strokeText(ft.text, ft.x, ft.y);
+        ctx.fillStyle = ft.color;
+        ctx.fillText(ft.text, ft.x, ft.y);
+        ctx.restore();
+      });
+    }
+
+    let lastFrameTime = performance.now();
+    function gameLoop(now) {
+      const rawDt = (now - lastFrameTime) / 1000;
+      lastFrameTime = now;
+      const dt = Math.min(0.05, Math.max(0.001, rawDt));
+
+      if (gameState.phase === 'battle') {
+        if (gameState.hitstop > 0) {
+          gameState.hitstop -= dt;
+        } else {
+          gameState.timer = Math.max(0, gameState.timer - dt);
+          const bounds = getArenaBounds();
+          if (p1Fighter && p2Fighter) {
+            p1Fighter.update(dt, p2Fighter, bounds);
+            p2Fighter.update(dt, p1Fighter, bounds);
+            updateProjectilesAndBeams(dt);
+            updateHud();
+
+            if (p2Fighter.hp <= 0 || (gameState.timer <= 0 && p1Fighter.hp >= p2Fighter.hp)) {
+              finishBattle(true);
+            } else if (p1Fighter.hp <= 0 || (gameState.timer <= 0 && p1Fighter.hp < p2Fighter.hp)) {
+              finishBattle(false);
+            }
+          }
+        }
+      } else {
+        updateProjectilesAndBeams(dt);
+      }
+
+      // 描画
+      ctx.save();
+      if (gameState.shakeTimer > 0) {
+        gameState.shakeTimer -= dt;
+        const sx = (Math.random() - 0.5) * 2 * gameState.shakeMagnitude;
+        const sy = (Math.random() - 0.5) * 2 * gameState.shakeMagnitude;
+        ctx.translate(sx, sy);
+      }
+
+      drawBackground(ctx);
+
+      // 変身・究極技時の暗転演出
+      if (gameState.darknessAlpha > 0) {
+        ctx.fillStyle = `rgba(0, 0, 0, ${gameState.darknessAlpha})`;
+        ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+        gameState.darknessAlpha = Math.max(0, gameState.darknessAlpha - dt * 1.4);
+      }
+
+      if (p1Fighter && p2Fighter && gameState.phase !== 'select') {
+        p2Fighter.draw(ctx);
+        p1Fighter.draw(ctx);
+      }
+
+      drawEffects(ctx);
+
+      // 画面フラッシュ
+      if (gameState.screenFlashAlpha > 0 && gameState.screenFlashColor) {
+        ctx.save();
+        ctx.globalAlpha = gameState.screenFlashAlpha;
+        ctx.fillStyle = gameState.screenFlashColor;
+        ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+        ctx.restore();
+        gameState.screenFlashAlpha = Math.max(0, gameState.screenFlashAlpha - dt * 1.6);
+      }
+
+      ctx.restore();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // --------------------------------------------------------------------------
+    // 8. PCキーボード＆スマホタッチ操作のイベント結線
+    // --------------------------------------------------------------------------
+    function triggerActionByName(act) {
+      if (gameState.phase !== 'battle' || !p1Fighter || !p2Fighter) return;
+      sound.unlock();
+      if (act === 'rush') p1Fighter.startRushAttack(p2Fighter);
+      else if (act === 'ki') p1Fighter.fireKiBlast(p2Fighter);
+      else if (act === 'blast1') p1Fighter.useBlast1();
+      else if (act === 'blast2') p1Fighter.useBlast2(p2Fighter);
+      else if (act === 'ultimate') p1Fighter.useUltimateBlast(p2Fighter);
+      else if (act === 'revenge') p1Fighter.tryRevengeCounter(p2Fighter);
+      else if (act === 'transform') p1Fighter.transformTo(null);
+      updateHud();
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+        e.preventDefault();
+      }
+      sound.unlock();
+
+      if (e.code === 'KeyW' || e.code === 'ArrowUp') inputState.up = true;
+      if (e.code === 'KeyS' || e.code === 'ArrowDown') inputState.down = true;
+      if (e.code === 'KeyA' || e.code === 'ArrowLeft') {
+        if (!inputState.left && gameState.phase === 'battle' && p1Fighter) {
+          const now = performance.now();
+          if (now - inputState.lastTapTime.left < 240) {
+            p1Fighter.startDragonDash(-1, inputState.up ? -0.4 : (inputState.down ? 0.4 : 0));
+          }
+          inputState.lastTapTime.left = now;
+        }
+        inputState.left = true;
+      }
+      if (e.code === 'KeyD' || e.code === 'ArrowRight') {
+        if (!inputState.right && gameState.phase === 'battle' && p1Fighter) {
+          const now = performance.now();
+          if (now - inputState.lastTapTime.right < 240) {
+            p1Fighter.startDragonDash(1, inputState.up ? -0.4 : (inputState.down ? 0.4 : 0));
+          }
+          inputState.lastTapTime.right = now;
+        }
+        inputState.right = true;
+      }
+
+      if (e.code === 'KeyC' || e.code === 'KeyL') inputState.guard = true;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') inputState.charge = true;
+
+      if (!e.repeat && gameState.phase === 'battle' && p1Fighter && p2Fighter) {
+        if (e.code === 'KeyZ' || e.code === 'KeyJ') triggerActionByName('rush');
+        if (e.code === 'KeyX' || e.code === 'KeyK') triggerActionByName('ki');
+        if (e.code === 'KeyQ') triggerActionByName('blast1');
+        if (e.code === 'KeyE') triggerActionByName('blast2');
+        if (e.code === 'KeyR') triggerActionByName('ultimate');
+        if (e.code === 'KeyF') triggerActionByName('revenge');
+        if (e.code === 'KeyT') triggerActionByName('transform');
+
+        // 数字キー 1〜7 で特定の形態へ直接変身・切替
+        const numMap = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6 };
+        if (e.code in numMap) {
+          p1Fighter.transformTo(numMap[e.code]);
+          updateHud();
+        }
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'KeyW' || e.code === 'ArrowUp') inputState.up = false;
+      if (e.code === 'KeyS' || e.code === 'ArrowDown') inputState.down = false;
+      if (e.code === 'KeyA' || e.code === 'ArrowLeft') inputState.left = false;
+      if (e.code === 'KeyD' || e.code === 'ArrowRight') inputState.right = false;
+      if (e.code === 'KeyC' || e.code === 'KeyL') inputState.guard = false;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') inputState.charge = false;
+    });
+
+    // スマホ・タッチボタン結線（方向・単発アクション・長押しガード/気溜め）
+    document.querySelectorAll('#touch-controls button').forEach((btn) => {
+      const dir = btn.getAttribute('data-dir');
+      const act = btn.getAttribute('data-act');
+      const hold = btn.getAttribute('data-hold');
+
+      const onPress = (ev) => {
+        ev.preventDefault();
+        sound.unlock();
+        btn.classList.add('pressed');
+        if (dir) inputState[dir] = true;
+        if (hold) inputState[hold] = true;
+        if (act) triggerActionByName(act);
+      };
+
+      const onRelease = (ev) => {
+        ev.preventDefault();
+        btn.classList.remove('pressed');
+        if (dir) inputState[dir] = false;
+        if (hold) inputState[hold] = false;
+      };
+
+      btn.addEventListener('pointerdown', onPress);
+      btn.addEventListener('pointerup', onRelease);
+      btn.addEventListener('pointerleave', onRelease);
+      btn.addEventListener('pointercancel', onRelease);
+    });
+
+    // ヘッダー・画面切替ボタン
+    document.getElementById('btn-start-battle').addEventListener('click', startBattle);
+    document.getElementById('btn-rematch').addEventListener('click', startBattle);
+    document.getElementById('btn-back-select').addEventListener('click', () => {
+      sound.stopChargeHum();
+      sound.stopBgm();
+      gameState.phase = 'select';
+      document.getElementById('result-screen').classList.add('hidden');
+      document.getElementById('battle-hud').classList.add('hidden');
+      document.getElementById('touch-controls').classList.add('hidden');
+      document.getElementById('select-screen').classList.remove('hidden');
+      renderSelectorUi();
+    });
+
+    document.getElementById('btn-select-mode').addEventListener('click', () => {
+      sound.stopChargeHum();
+      sound.stopBgm();
+      gameState.phase = 'select';
+      document.getElementById('result-screen').classList.add('hidden');
+      document.getElementById('battle-hud').classList.add('hidden');
+      document.getElementById('touch-controls').classList.add('hidden');
+      document.getElementById('select-screen').classList.remove('hidden');
+      renderSelectorUi();
+    });
+
+    document.getElementById('btn-keyguide').addEventListener('click', () => {
+      document.getElementById('keyguide-panel').classList.toggle('hidden');
+    });
+    document.getElementById('btn-close-guide').addEventListener('click', () => {
+      document.getElementById('keyguide-panel').classList.add('hidden');
+    });
+
+    document.getElementById('btn-mute').addEventListener('click', (e) => {
+      sound.unlock();
+      const nextMute = !sound.muted;
+      sound.setMuted(nextMute);
+      e.currentTarget.textContent = nextMute ? '🔇 MUTE' : '🔊 SOUND';
+    });
+
+    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('load', () => {
+      resizeCanvas();
+      renderSelectorUi();
+      requestAnimationFrame(gameLoop);
+    });
+  </script>
+</body>
+</html>
